@@ -1,0 +1,311 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AA000001 /* YoinkApp.swift in Sources */              = {isa = PBXBuildFile; fileRef = AA100001; };
+		AA000002 /* ContentView.swift in Sources */           = {isa = PBXBuildFile; fileRef = AA100002; };
+		AA000003 /* JobCard.swift in Sources */               = {isa = PBXBuildFile; fileRef = AA100003; };
+		AA000004 /* Services.swift in Sources */              = {isa = PBXBuildFile; fileRef = AA100004; };
+		AA000005 /* DownloadJob.swift in Sources */           = {isa = PBXBuildFile; fileRef = AA100005; };
+		AA000006 /* SettingsManager.swift in Sources */       = {isa = PBXBuildFile; fileRef = AA100006; };
+		AA000007 /* Assets.xcassets in Resources */           = {isa = PBXBuildFile; fileRef = AA100007; };
+		AA000009 /* ThemeManager.swift in Sources */          = {isa = PBXBuildFile; fileRef = AA100009; };
+		AA000010 /* Haptics.swift in Sources */               = {isa = PBXBuildFile; fileRef = AA100010; };
+		AA000011 /* AdvancedView.swift in Sources */          = {isa = PBXBuildFile; fileRef = AA100011; };
+		AA000012 /* SettingsView.swift in Sources */          = {isa = PBXBuildFile; fileRef = AA100012; };
+		AA000014 /* Sheets.swift in Sources */                = {isa = PBXBuildFile; fileRef = AA100013; };
+		AA000015 /* HistoryView.swift in Sources */           = {isa = PBXBuildFile; fileRef = AA100016; };
+		AA000016 /* MenuBarView.swift in Sources */           = {isa = PBXBuildFile; fileRef = AA100015; };
+		AA000017 /* ClipboardMonitor.swift in Sources */      = {isa = PBXBuildFile; fileRef = AA100017; };
+		AA000018 /* WatchLaterStore.swift in Sources */       = {isa = PBXBuildFile; fileRef = AA100018; };
+		AA000019 /* bin in Resources */                       = {isa = PBXBuildFile; fileRef = AA100019; };
+		AA000020 /* TwitchService.swift in Sources */         = {isa = PBXBuildFile; fileRef = AA100020; };
+		AA000021 /* WatchLaterView.swift in Sources */        = {isa = PBXBuildFile; fileRef = AA100021; };
+		AA000022 /* TutorialView.swift in Sources */          = {isa = PBXBuildFile; fileRef = AA100022; };
+		AA000030 /* ScheduledDownloadStore.swift in Sources */= {isa = PBXBuildFile; fileRef = AA100030; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		AA100001 /* YoinkApp.swift */             = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = YoinkApp.swift;             sourceTree = "<group>"; };
+		AA100002 /* ContentView.swift */          = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = ContentView.swift;          sourceTree = "<group>"; };
+		AA100003 /* JobCard.swift */              = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = JobCard.swift;              sourceTree = "<group>"; };
+		AA100004 /* Services.swift */             = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = Services.swift;             sourceTree = "<group>"; };
+		AA100005 /* DownloadJob.swift */          = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = DownloadJob.swift;          sourceTree = "<group>"; };
+		AA100006 /* SettingsManager.swift */      = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = SettingsManager.swift;      sourceTree = "<group>"; };
+		AA100007 /* Assets.xcassets */            = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog;       path = Assets.xcassets;            sourceTree = "<group>"; };
+		AA100008 /* Yoink.entitlements */         = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements;   path = Yoink.entitlements;         sourceTree = SOURCE_ROOT; };
+		AA100009 /* ThemeManager.swift */         = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = ThemeManager.swift;         sourceTree = "<group>"; };
+		AA100010 /* Haptics.swift */              = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = Haptics.swift;              sourceTree = "<group>"; };
+		AA100011 /* AdvancedView.swift */         = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = AdvancedView.swift;         sourceTree = "<group>"; };
+		AA100012 /* SettingsView.swift */         = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = SettingsView.swift;         sourceTree = "<group>"; };
+		AA100013 /* Sheets.swift */               = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = Sheets.swift;               sourceTree = "<group>"; };
+		AA100015 /* MenuBarView.swift */          = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = MenuBarView.swift;          sourceTree = "<group>"; };
+		AA100016 /* HistoryView.swift */          = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = HistoryView.swift;          sourceTree = "<group>"; };
+		AA100017 /* ClipboardMonitor.swift */     = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = ClipboardMonitor.swift;     sourceTree = "<group>"; };
+		AA100018 /* WatchLaterStore.swift */      = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = WatchLaterStore.swift;      sourceTree = "<group>"; };
+		AA100019 /* bin */                        = {isa = PBXFileReference; lastKnownFileType = folder;                    path = bin;                        sourceTree = "<group>"; };
+		AA100020 /* TwitchService.swift */        = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = TwitchService.swift;        sourceTree = "<group>"; };
+		AA100021 /* WatchLaterView.swift */       = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = WatchLaterView.swift;       sourceTree = "<group>"; };
+		AA100022 /* TutorialView.swift */         = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = TutorialView.swift;         sourceTree = "<group>"; };
+		AA100030 /* ScheduledDownloadStore.swift */= {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;         path = ScheduledDownloadStore.swift; sourceTree = "<group>"; };
+		AA200001 /* Yoink.app */                  = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Yoink.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		AA300001 = {
+			isa = PBXGroup;
+			children = (AA300002, AA300009);
+			sourceTree = "<group>";
+		};
+		AA300002 /* Yoink */ = {
+			isa = PBXGroup;
+			children = (AA300003, AA300008);
+			path = Yoink;
+			sourceTree = "<group>";
+		};
+		AA300003 /* Sources */ = {
+			isa = PBXGroup;
+			children = (AA100001, AA300005, AA300006, AA300007);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		AA300005 /* Views */ = {
+			isa = PBXGroup;
+			children = (AA100002, AA100003, AA100011, AA100012, AA100013, AA100015, AA100016, AA100021, AA100022);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		AA300006 /* Models */ = {
+			isa = PBXGroup;
+			children = (AA100005, AA100006, AA100009, AA100010);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		AA300007 /* Services */ = {
+			isa = PBXGroup;
+			children = (AA100004, AA100020, AA100017, AA100018, AA100030);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		AA300008 /* Resources */ = {
+			isa = PBXGroup;
+			children = (AA100007, AA100019);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		AA300009 /* Products */ = {
+			isa = PBXGroup;
+			children = (AA200001);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AA400001 /* Yoink */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA600002;
+			buildPhases = (AA900001, AA500001, AA500002);
+			buildRules = ();
+			dependencies = ();
+			name = Yoink;
+			productName = Yoink;
+			productReference = AA200001;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA700001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = { AA400001 = { CreatedOnToolsVersion = 15.0; }; };
+			};
+			buildConfigurationList = AA600001;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = AA300001;
+			productRefGroup = AA300009;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (AA400001);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA500002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA000007 /* Assets.xcassets in Resources */,
+				AA000019 /* bin in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		AA900001 /* Check bundled binaries */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = (
+				"$(SRCROOT)/Yoink/Resources/bin/yt-dlp",
+				"$(SRCROOT)/Yoink/Resources/bin/ffmpeg",
+			);
+			name = "Check bundled binaries";
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/yt-dlp.check",
+				"$(DERIVED_FILE_DIR)/ffmpeg.check",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "BIN=\"$SRCROOT/Yoink/Resources/bin\"\nif [ ! -f \"$BIN/yt-dlp\" ] || [ ! -f \"$BIN/ffmpeg\" ]; then\n  echo \"error: Run ./download_binaries.sh first.\" >&2\n  exit 1\nfi\nchmod +x \"$BIN/yt-dlp\" \"$BIN/ffmpeg\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AA500001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA000001 /* YoinkApp.swift in Sources */,
+				AA000002 /* ContentView.swift in Sources */,
+				AA000003 /* JobCard.swift in Sources */,
+				AA000004 /* Services.swift in Sources */,
+				AA000020 /* TwitchService.swift in Sources */,
+				AA000005 /* DownloadJob.swift in Sources */,
+				AA000006 /* SettingsManager.swift in Sources */,
+				AA000009 /* ThemeManager.swift in Sources */,
+				AA000010 /* Haptics.swift in Sources */,
+				AA000011 /* AdvancedView.swift in Sources */,
+				AA000012 /* SettingsView.swift in Sources */,
+				AA000014 /* Sheets.swift in Sources */,
+				AA000015 /* HistoryView.swift in Sources */,
+				AA000016 /* MenuBarView.swift in Sources */,
+				AA000017 /* ClipboardMonitor.swift in Sources */,
+				AA000018 /* WatchLaterStore.swift in Sources */,
+				AA000030 /* ScheduledDownloadStore.swift in Sources */,
+				AA000021 /* WatchLaterView.swift in Sources */,
+				AA000022 /* TutorialView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AA800001 /* Debug - Project */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)");
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AA800002 /* Release - Project */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				MTL_FAST_MATH = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
+			};
+			name = Release;
+		};
+		AA800003 /* Debug - Target */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Yoink/Yoink.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Yoink;
+				INFOPLIST_KEY_NSHumanReadableDescription = "Media downloader powered by yt-dlp and ffmpeg";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSUserNotificationUsageDescription = "Yoink notifies you when your downloads complete.";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yoink.mediadownloader;
+				PRODUCT_NAME = Yoink;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AA800004 /* Release - Target */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Yoink/Yoink.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Yoink;
+				INFOPLIST_KEY_NSHumanReadableDescription = "Media downloader powered by yt-dlp and ffmpeg";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSUserNotificationUsageDescription = "Yoink notifies you when your downloads complete.";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yoink.mediadownloader;
+				PRODUCT_NAME = Yoink;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AA600001 /* Build configuration list for PBXProject "Yoink" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (AA800001, AA800002);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA600002 /* Build configuration list for PBXNativeTarget "Yoink" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (AA800003, AA800004);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = AA700001 /* Project object */;
+}

@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+
+# Binaries (distribute via Releases instead)
+Yoink/Resources/bin/ffmpeg
+Yoink/Resources/bin/ffprobe
+Yoink/Resources/bin/yt-dlp
+Yoink/Resources/bin/python/
