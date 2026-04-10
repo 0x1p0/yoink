@@ -15,9 +15,8 @@
 ---
 
 ## Demo
-<div align="center">
-  <video src="[https://github.com/0x1p0/yoink/raw/main/demo.mp4](https://github.com/0x1p0/yoink/blob/main/demo.mp4)" width="720" autoplay loop muted playsinline></video>
-</div>
+
+https://github.com/0x1p0/yoink/blob/main/demo.mp4
 
 ---
 
