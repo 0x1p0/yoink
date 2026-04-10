@@ -108,6 +108,12 @@ Yoink is a clean, native macOS app for downloading videos and audio from YouTube
 4. Launch Yoink - that's it. All binaries are already bundled inside the app.
 
 > **"Yoink can't be opened" / Gatekeeper prompt?** Right-click Yoink.app → Open → Open. This only happens once on unsigned builds.
+>
+> If that doesn't work, run this in Terminal:
+> ```bash
+> xattr -cr /Applications/Yoink.app
+> ```
+> Then try opening it again.
 
 ### Option 2 - Build from source
 
