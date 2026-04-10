@@ -16,7 +16,7 @@
 
 ## Demo
 
-https://github.com/0x1p0/yoink/blob/main/demo.mp4
+https://github.com/user-attachments/assets/d543bf3e-5aa3-4ba5-b808-5bb7b1bcb1f1
 
 ---
 
