@@ -38,7 +38,7 @@ struct JobCard: View {
                                 title: job.meta?.title ?? "",
                                 thumbnail: job.meta?.thumbnail ?? "",
                                 format: job.format,
-                                isPlaylist: DownloadJob.looksLikePlaylist(job.url))
+                                isPlaylist: DownloadJob.looksLikePlaylist(job.url) && !DownloadService.isSoopOrAfreecaURL(job.url))
                             queue.remove(job)
                         }
                         IconButton(systemImage: "alarm", tint: nil, tooltip: "Schedule download") {
@@ -347,7 +347,7 @@ struct URLInputField: View {
                         guard !Task.isCancelled else { return }
                         await MainActor.run {
                             guard !Task.isCancelled else { return }
-                            if DownloadJob.looksLikePlaylist(url) {
+                            if DownloadJob.looksLikePlaylist(url) && !DownloadService.isSoopOrAfreecaURL(url) {
                                 NotificationCenter.default.post(name: .playlistURLDetected, object: job)
                             } else {
                                 DownloadService.shared.fetchMetadata(for: job)
@@ -379,7 +379,7 @@ struct URLInputField: View {
                         await MainActor.run {
                             guard !Task.isCancelled else { return }
                             urlUnsupported = false
-                            if DownloadJob.looksLikePlaylist(newURL) {
+                            if DownloadJob.looksLikePlaylist(newURL) && !DownloadService.isSoopOrAfreecaURL(newURL) {
                                 NotificationCenter.default.post(name: .playlistURLDetected, object: job)
                             } else {
                                 DownloadService.shared.fetchMetadata(for: job)

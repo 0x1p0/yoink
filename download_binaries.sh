@@ -4,24 +4,63 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="$SCRIPT_DIR/Yoink/Resources/bin"
 mkdir -p "$BIN_DIR"
 
-# ── yt-dlp via standalone Python ──────────────────────────────────────────────
+# ── Resolve latest Python version from python-build-standalone ────────────────
 
-PYTHON_VERSION="3.12.8"
 ARCH=$(uname -m)
 
+echo "🔍 Fetching latest python-build-standalone release..."
+
+# Get the latest release info from GitHub API
+RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/indygreg/python-build-standalone/releases/latest")
+
+# Extract the release tag (e.g. "20250101")
+RELEASE_TAG=$(echo "$RELEASE_JSON" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print(data['tag_name'])
+")
+
+# Find the correct asset URL for this arch
 if [ "$ARCH" = "arm64" ]; then
-    PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20241219/cpython-${PYTHON_VERSION}+20241219-aarch64-apple-darwin-install_only.tar.gz"
+    ASSET_PATTERN="aarch64-apple-darwin-install_only.tar.gz"
 else
-    PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20241219/cpython-${PYTHON_VERSION}+20241219-x86_64-apple-darwin-install_only.tar.gz"
+    ASSET_PATTERN="x86_64-apple-darwin-install_only.tar.gz"
 fi
+
+PYTHON_URL=$(echo "$RELEASE_JSON" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+pattern = sys.argv[1]
+assets = [a['browser_download_url'] for a in data['assets']
+          if pattern in a['name'] and 'cpython-' in a['name']]
+# Prefer the highest Python version in this release
+assets.sort(reverse=True)
+print(assets[0] if assets else '')
+" "$ASSET_PATTERN")
+
+if [ -z "$PYTHON_URL" ]; then
+    echo "❌ Could not find a matching Python asset for $ARCH in release $RELEASE_TAG"
+    exit 1
+fi
+
+# Extract Python version from the URL filename (e.g. cpython-3.13.2+...)
+PYTHON_VERSION=$(basename "$PYTHON_URL" | sed -E 's/cpython-([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+
+echo "✓ Latest release : $RELEASE_TAG"
+echo "✓ Python version : $PYTHON_VERSION"
+echo "✓ Asset URL      : $PYTHON_URL"
+
+# ── Download and extract Python ───────────────────────────────────────────────
 
 PYTHON_DIR="$BIN_DIR/python"
 
+echo ""
 echo "📦 Downloading standalone Python ${PYTHON_VERSION} for ${ARCH}..."
 TMP_TAR="$(mktemp -d)/python.tar.gz"
 curl -fL --progress-bar -o "$TMP_TAR" "$PYTHON_URL"
 
 echo "📦 Extracting Python..."
+rm -rf "$PYTHON_DIR"
 mkdir -p "$PYTHON_DIR"
 tar -xzf "$TMP_TAR" -C "$PYTHON_DIR" --strip-components=1
 rm -f "$TMP_TAR"
@@ -45,6 +84,7 @@ echo "✓ yt-dlp launcher written"
 
 # ── ffmpeg ───────────────────────────────────────────────────────────────────
 
+echo ""
 echo "📦 Downloading ffmpeg..."
 
 FFMPEG_URL="https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip"
@@ -63,7 +103,7 @@ unzip -o "$TMP_ZIP" -d "$BIN_DIR" ffmpeg
 chmod +x "$BIN_DIR/ffmpeg"
 rm -f "$TMP_ZIP"
 
-echo "✓ ffmpeg downloaded"
+echo "✓ ffmpeg downloaded: $("$BIN_DIR/ffmpeg" -version 2>&1 | head -1 | awk '{print $3}')"
 
 # ---- ffprobe ----
 echo "📦 Downloading ffprobe..."
@@ -79,7 +119,7 @@ unzip -o "$TMP_ZIP2" -d "$BIN_DIR" ffprobe
 chmod +x "$BIN_DIR/ffprobe"
 rm -f "$TMP_ZIP2"
 
-echo "✓ ffprobe downloaded"
+echo "✓ ffprobe downloaded: $("$BIN_DIR/ffprobe" -version 2>&1 | head -1 | awk '{print $3}')"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 

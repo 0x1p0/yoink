@@ -288,6 +288,26 @@ struct AdvancedView: View {
             // Build the video URL
             if playlistURL.contains("youtube.com") || playlistURL.contains("youtu.be") {
                 job.url = "https://www.youtube.com/watch?v=\(item.videoID)"
+            } else if DownloadService.isSoopOrAfreecaURL(playlistURL) {
+                // afreecatv/soop: isPartialPlaylist skips the --no-playlist --playlist-items 1
+                // block in buildArguments, so our --playlist-items N in extraArgs is the only
+                // one yt-dlp sees and it downloads the correct part.
+                job.url = playlistURL
+                job.isPartialPlaylist = true
+                job.extraArgs = "--playlist-items \(item.index)"
+                // Pre-populate meta so the job card shows this part's title/thumbnail/duration
+                // and never fires a metadata fetch that would overwrite with part 1's info.
+                let durParts = item.duration.split(separator: ":").map(String.init)
+                let dH = durParts.count == 3 ? durParts[0] : "00"
+                let dM = durParts.count >= 2 ? durParts[durParts.count - 2] : "00"
+                let dS = durParts.last ?? "00"
+                job.meta = VideoMeta(
+                    title: item.title, thumbnail: item.thumbnail,
+                    duration: item.duration,
+                    durationH: dH, durationM: dM, durationS: dS,
+                    hasSubs: false)
+                job.endH = dH; job.endM = dM; job.endS = dS
+                job.metaState = .done
             } else {
                 job.url = playlistURL
                 job.isPlaylist = false
@@ -341,6 +361,10 @@ struct AdvancedView: View {
         }
 
         downloadRunning = false
+        // Switch to Video tab so the user sees their downloads
+        withAnimation(.spring(response: 0.3)) {
+            settings.appModeRaw = AppMode.video.rawValue
+        }
     }
 
     private func pickOutputFolder() {

@@ -149,7 +149,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
                 Task { @MainActor in
                     WatchLaterStore.shared.add(
                         url: clipURL,
-                        isPlaylist: DownloadJob.looksLikePlaylist(clipURL)
+                        isPlaylist: DownloadJob.looksLikePlaylist(clipURL) && !DownloadService.isSoopOrAfreecaURL(clipURL)
                     )
                 }
 

@@ -214,7 +214,7 @@ struct MenuBarView: View {
                         .textFieldStyle(.plain).font(.system(size: 13)).foregroundStyle(fg)
                         .focused($urlFieldFocused)
                         .onChange(of: newURL) { handleURLChange($0) }
-                        .onSubmit { 
+                        .onSubmit {
                             if showPlaylistBanner {
                                 showPlaylistBanner = false
                                 let clean = DownloadJob.stripPlaylistParams(from: newURL)
@@ -235,7 +235,7 @@ struct MenuBarView: View {
                 .overlay(RoundedRectangle(cornerRadius: 9)
                     .strokeBorder(rowBorder, lineWidth: 0.5))
 
-                Button { 
+                Button {
                     if showPlaylistBanner {
                         showPlaylistBanner = false
                         let clean = DownloadJob.stripPlaylistParams(from: newURL)
@@ -991,7 +991,7 @@ struct MenuBarView: View {
                     $0.url.trimmingCharacters(in: .whitespaces) == normalised
                 })
             }
-            if DownloadJob.looksLikePlaylist(url) {
+            if DownloadJob.looksLikePlaylist(url) && !DownloadService.isSoopOrAfreecaURL(url) {
                 detectedPlaylistURL = url; showPlaylistBanner = true
                 // Still start preview for the individual video
                 let clean = DownloadJob.stripPlaylistParams(from: url)
@@ -1089,6 +1089,29 @@ struct MenuBarView: View {
             let job = DownloadJob()
             if playlistURL.contains("youtube.com") || playlistURL.contains("youtu.be") {
                 job.url = "https://www.youtube.com/watch?v=\(item.videoID)"
+            } else if DownloadService.isSoopOrAfreecaURL(playlistURL) {
+                // afreecatv/soop: multi-part VOD — must NOT set isPlaylist (avoids playlist
+                // output template) but also must NOT let buildArguments add --no-playlist
+                // (which forces part 1 regardless of --playlist-items).
+                // We pass --playlist-items via extraArgs; the --no-playlist block is skipped
+                // by setting a sentinel that tells buildArguments this is a numbered part.
+                job.url = playlistURL
+                job.isPartialPlaylist = true   // skips --no-playlist without enabling playlist mode
+                job.extraArgs = "--playlist-items \(item.index)"
+                // Pre-populate meta from the playlist data we already have so the job card
+                // shows the correct title/thumbnail/duration for THIS part immediately,
+                // and never fires a metadata fetch (which would return part 1's info).
+                let durParts = item.duration.split(separator: ":").map(String.init)
+                let dH = durParts.count == 3 ? durParts[0] : "00"
+                let dM = durParts.count >= 2 ? durParts[durParts.count - 2] : "00"
+                let dS = durParts.last ?? "00"
+                job.meta = VideoMeta(
+                    title: item.title, thumbnail: item.thumbnail,
+                    duration: item.duration,
+                    durationH: dH, durationM: dM, durationS: dS,
+                    hasSubs: false)
+                job.endH = dH; job.endM = dM; job.endS = dS
+                job.metaState = .done
             } else {
                 job.url = playlistURL; job.extraArgs = "--playlist-items \(item.index)"
             }
@@ -1127,6 +1150,13 @@ struct MenuBarView: View {
         }
         Haptics.start()
         playlistItems.forEach { if $0.downloadStatus != .downloading { $0.selected = false } }
+        // Switch back to the jobs view so the user sees their downloads starting
+        withAnimation(.easeInOut(duration: 0.2)) {
+            playlistFetch = .idle
+            playlistItems = []
+            playlistURL   = ""
+            detectedPlaylistURL = ""
+        }
     }
 
     func siteIcon(_ url: String) -> String {

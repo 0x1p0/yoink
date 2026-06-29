@@ -181,6 +181,7 @@ struct VideoMeta {
     var videoFormats      : [VideoFormatInfo] = []   // real formats from yt-dlp
     var audioFormats      : [AudioFormatInfo] = []
     var nEntries          : Int = 1                  // >1 means multi-part (e.g. soop)
+    var isRealPlaylist    : Bool = false              // true only when yt-dlp _type == "playlist"
 }
 
 // MARK: - Download Job
@@ -217,6 +218,9 @@ final class DownloadJob: ObservableObject, Identifiable {
 
     // Playlist
     @Published var isPlaylist       : Bool   = false
+    /// True for afreecatv/soop numbered parts: skips the --no-playlist/--playlist-items 1
+    /// guard in buildArguments without enabling full playlist mode (output template etc.).
+    @Published var isPartialPlaylist : Bool   = false
     @Published var playlistStart    : String = ""
     @Published var playlistEnd      : String = ""
     @Published var playlistReverse  : Bool   = false
@@ -356,7 +360,7 @@ final class DownloadJob: ObservableObject, Identifiable {
             args += ["--ffmpeg-location", ffmpeg]
         }
 
-        if !isPlaylist {
+        if !isPlaylist && !isPartialPlaylist {
             args += ["--no-playlist", "--playlist-items", "1"]
         }
 

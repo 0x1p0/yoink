@@ -113,6 +113,11 @@ final class DependencyService: ObservableObject {
             do {
                 try fm.copyItem(at: src, to: dest)
                 try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
+                // Strip macOS quarantine xattr so Gatekeeper doesn't block execution.
+                // When the app is distributed as a DMG, macOS tags everything inside
+                // with com.apple.quarantine. yt-dlp (a Python script) is unaffected,
+                // but ffmpeg and ffprobe are native Mach-O binaries and get blocked.
+                Self.removeQuarantine(at: dest)
                 log("✓ Copied \(binary) → \(dest.path)")
             } catch {
                 log("✗ Failed to copy \(binary): \(error.localizedDescription)")
@@ -260,6 +265,7 @@ final class DependencyService: ObservableObject {
                 try? fm.removeItem(at: dest)
                 try fm.moveItem(at: bin, to: dest)
                 try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
+                Self.removeQuarantine(at: dest)
                 log("ffprobe: updated to \(latest)")
             }
             try? fm.removeItem(at: exDir); try? fm.removeItem(at: tmp)
@@ -308,10 +314,25 @@ final class DependencyService: ObservableObject {
                 try? fm.removeItem(at: dest)
                 try fm.moveItem(at: bin, to: dest)
                 try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
+                Self.removeQuarantine(at: dest)
                 log("ffmpeg: updated to \(latest)")
             }
             try? fm.removeItem(at: exDir); try? fm.removeItem(at: tmp)
         } catch { log("ffmpeg update failed: \(error.localizedDescription)") }
+    }
+
+    /// Removes com.apple.quarantine from a binary so Gatekeeper doesn't block it.
+    /// Needed for ffmpeg/ffprobe when the app is distributed as a DMG — macOS tags
+    /// all files inside with the quarantine xattr; native Mach-O binaries are blocked
+    /// until it's removed. yt-dlp is a Python script and isn't affected.
+    nonisolated static func removeQuarantine(at url: URL) {
+        let xattr = Process()
+        xattr.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+        xattr.arguments = ["-d", "com.apple.quarantine", url.path]
+        xattr.standardOutput = Pipe()
+        xattr.standardError  = Pipe()
+        try? xattr.run()
+        xattr.waitUntilExit()
     }
 
     nonisolated static func macArch() -> String {
@@ -934,6 +955,14 @@ final class DownloadService: ObservableObject {
         return supportedExtractorPatterns.contains(where: { normalizedHost.contains($0) })
     }
 
+    /// Returns true for soop.tv / afreecatv.com VOD URLs.
+    /// These are multi-part single VODs — yt-dlp outputs one JSON per part,
+    /// making n_entries > 1, but they are NOT user-selectable playlists.
+    static func isSoopOrAfreecaURL(_ urlString: String) -> Bool {
+        guard let host = URLComponents(string: urlString)?.host?.lowercased() else { return false }
+        return host.contains("sooptv.com") || host.contains("afreecatv.com")
+    }
+
     private func loadExtractorPatterns() async {
         extractorPatternsLoaded = true
         guard let path = await DependencyService.shared.resolvePath(for: "yt-dlp") else { return }
@@ -1109,7 +1138,7 @@ final class DownloadService: ObservableObject {
         await MainActor.run {
             switch result {
             case .success(let meta):
-                if meta.nEntries > 1 {
+                if meta.nEntries > 1 && !DownloadService.isSoopOrAfreecaURL(job.url) && meta.isRealPlaylist {
                     job.meta = meta; job.metaState = .done
                     NotificationCenter.default.post(name: .playlistURLDetected, object: job)
                     return
@@ -1127,9 +1156,7 @@ final class DownloadService: ObservableObject {
                                || msg.contains("private video")
                                || msg.contains("age-restricted")
                                || msg.contains("age restricted")
-                               || msg.contains("cookies")
                                || msg.contains("requires authentication")
-                               || msg.contains("not available")
                                || msg.contains("subscriber")
                                || msg.contains("subscription")
                                || msg.contains("must be logged in")
@@ -1137,7 +1164,6 @@ final class DownloadService: ObservableObject {
                                || msg.contains("account that has access")
                                || msg.contains("premium")
                                || msg.contains("patreon")
-                               || msg.contains("access to this")
                                || (msg.contains("http error 403") && !msg.contains("http error 4030"))
                 if isAuthError {
                     job.metaState = hasCookies ? .needsAuthRetry : .needsAuth
@@ -1153,13 +1179,22 @@ final class DownloadService: ObservableObject {
     }
 
     nonisolated private func runMetadataFetch(url: String, ytdlpPath: String, authArgs: [String]) async -> Result<VideoMeta, Error> {
+        // Inline the afreecatv/soop check here (pure URL string logic) to avoid
+        // a call to the @MainActor-isolated isSoopOrAfreecaURL from nonisolated context.
+        // For these VODs we must NOT pass --no-playlist so yt-dlp enumerates all parts
+        // and n_entries is populated correctly. We still only read the first JSON line.
+        let isSoopOrAfreeca: Bool = {
+            guard let host = URLComponents(string: url)?.host?.lowercased() else { return false }
+            return host.contains("sooptv.com") || host.contains("afreecatv.com")
+        }()
         return await withCheckedContinuation { cont in
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: ytdlpPath)
-            let args = authArgs + [
-                "--dump-json", "--no-playlist", "--no-warnings",
+            let noPlaylistArgs: [String] = isSoopOrAfreeca ? [] : ["--no-playlist"]
+            let args = authArgs + noPlaylistArgs + [
+                "--dump-json", "--no-warnings",
                 "--no-check-formats",
-                "--socket-timeout", "8",
+                "--socket-timeout", "15",
                 "--retries", "1", "--fragment-retries", "1",
                 url
             ]
@@ -1210,6 +1245,8 @@ final class DownloadService: ObservableObject {
                 let durationString = json["duration_string"] as? String ?? "0:00"
                 let durSecs        = json["duration"]        as? Double ?? 0
                 let nEntries       = json["n_entries"]       as? Int ?? 1
+                let ytdlpType      = json["_type"]           as? String ?? "video"
+                let isRealPlaylist = (ytdlpType == "playlist")
                 let dh = String(format: "%02d", Int(durSecs) / 3600)
                 let dm = String(format: "%02d", (Int(durSecs) % 3600) / 60)
                 let ds = String(format: "%02d", Int(durSecs) % 60)
@@ -1302,7 +1339,7 @@ final class DownloadService: ObservableObject {
                     hasSubs: !subLangs.isEmpty, chapters: chapters,
                     availableSubLangs: subLangs,
                     videoFormats: videoFormats, audioFormats: audioFormats,
-                    nEntries: nEntries)))
+                    nEntries: nEntries, isRealPlaylist: isRealPlaylist)))
             }
             do { try proc.run() } catch { cont.resume(returning: .failure(error)) }
         }
@@ -1315,6 +1352,14 @@ final class DownloadService: ObservableObject {
         guard let ytdlpPath = await DependencyService.shared.resolvePath(for: "yt-dlp") else {
             return .failure(NSError(domain: "yoink", code: 1, userInfo: [NSLocalizedDescriptionKey: "yt-dlp not found"]))
         }
+
+        // afreecatv / soop VODs are multi-part single broadcasts, not real playlists.
+        // --flat-playlist returns nothing useful on them; --dump-json emits one JSON
+        // object per part, which we parse directly.
+        if DownloadService.isSoopOrAfreecaURL(url) {
+            return await fetchAfreecatvParts(url: url, ytdlpPath: ytdlpPath, authArgs: authArgs)
+        }
+
         return await withCheckedContinuation { cont in
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: ytdlpPath)
@@ -1384,6 +1429,92 @@ final class DownloadService: ObservableObject {
                     cont.resume(returning: .failure(NSError(domain: "yoink", code: 2, userInfo: [NSLocalizedDescriptionKey: "No playlist items found. Check the URL or try again."])))
                 } else {
                     cont.resume(returning: .success(items))
+                }
+            }
+            do { try proc.run() } catch { cont.resume(returning: .failure(error)) }
+        }
+    }
+
+    // MARK: - afreecatv / soop multi-part VOD fetcher
+    // yt-dlp --dump-json on a vod.afreecatv.com URL emits one JSON object per part,
+    // one per line. We parse each line to build the PlaylistItem list, preserving
+    // playlist_index as the part number for use with --playlist-items N on download.
+    nonisolated private func fetchAfreecatvParts(url: String, ytdlpPath: String, authArgs: [String]) async -> Result<[PlaylistItem], Error> {
+        return await withCheckedContinuation { cont in
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: ytdlpPath)
+            // Do NOT pass --no-playlist: we want all parts.
+            // --no-check-formats keeps it fast (no format probing).
+            proc.arguments = authArgs + [
+                "--dump-json",
+                "--no-check-formats",
+                "--no-warnings",
+                "--socket-timeout", "15",
+                "--retries", "1",
+                url
+            ]
+            let outPipe = Pipe(); let errPipe = Pipe()
+            proc.standardOutput = outPipe; proc.standardError = errPipe
+            final class Box: @unchecked Sendable { var data = Data() }
+            final class EBox: @unchecked Sendable { var data = Data() }
+            let box = Box(); let lock = NSLock()
+            let eBox = EBox(); let eLock = NSLock()
+            outPipe.fileHandleForReading.readabilityHandler = { h in
+                let d = h.availableData; guard !d.isEmpty else { return }
+                lock.lock(); box.data.append(d); lock.unlock()
+            }
+            errPipe.fileHandleForReading.readabilityHandler = { h in
+                let d = h.availableData; guard !d.isEmpty else { return }
+                eLock.lock(); eBox.data.append(d); eLock.unlock()
+            }
+            proc.terminationHandler = { p in
+                outPipe.fileHandleForReading.readabilityHandler = nil
+                errPipe.fileHandleForReading.readabilityHandler = nil
+                lock.lock()
+                box.data.append(outPipe.fileHandleForReading.readDataToEndOfFile())
+                let raw = String(data: box.data, encoding: .utf8) ?? ""
+                lock.unlock()
+                eLock.lock()
+                eBox.data.append(errPipe.fileHandleForReading.readDataToEndOfFile())
+                let errText = String(data: eBox.data, encoding: .utf8) ?? ""
+                eLock.unlock()
+
+                var items: [PlaylistItem] = []
+                // Each line is a separate JSON object (one per VOD part).
+                let jsonLines = raw.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                for (lineIdx, line) in jsonLines.enumerated() {
+                    guard let data = line.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                    else { continue }
+
+                    // playlist_index is 1-based part number; fall back to line position
+                    let idx        = (json["playlist_index"] as? Int) ?? (lineIdx + 1)
+                    let title      = (json["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Part \(idx)"
+                    let thumbnail  = json["thumbnail"] as? String ?? ""
+                    let vid        = json["id"] as? String ?? ""
+                    let durSecs    = Int(json["duration"] as? Double ?? 0)
+                    let dh = durSecs / 3600; let dm = (durSecs % 3600) / 60; let ds = durSecs % 60
+                    let dur: String
+                    if durSecs == 0 {
+                        dur = ""
+                    } else if dh > 0 {
+                        dur = String(format: "%d:%02d:%02d", dh, dm, ds)
+                    } else {
+                        dur = String(format: "%d:%02d", dm, ds)
+                    }
+
+                    let item = PlaylistItem(index: idx, videoID: vid, title: title, duration: dur)
+                    item.thumbnail = thumbnail
+                    items.append(item)
+                }
+
+                if items.isEmpty {
+                    let reason = errText.isEmpty ? "No parts found. Check the URL or try again." : errText
+                    cont.resume(returning: .failure(NSError(domain: "yoink", code: 2,
+                        userInfo: [NSLocalizedDescriptionKey: reason])))
+                } else {
+                    // Sort by part index in case yt-dlp emits them out of order
+                    cont.resume(returning: .success(items.sorted { $0.index < $1.index }))
                 }
             }
             do { try proc.run() } catch { cont.resume(returning: .failure(error)) }

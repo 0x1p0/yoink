@@ -193,7 +193,7 @@ struct WatchLaterView: View {
                                 .frame(maxWidth: 340)
                             Button("Save") {
                                 guard addURLText.lowercased().hasPrefix("http") else { return }
-                                if DownloadJob.looksLikePlaylist(addURLText) {
+                                if DownloadJob.looksLikePlaylist(addURLText) && !DownloadService.isSoopOrAfreecaURL(addURLText) {
                                     playlistPromptURL = addURLText
                                     addURLText = ""
                                     showPlaylistPrompt = true
@@ -323,7 +323,7 @@ struct WatchLaterView: View {
 
     private func quickAdd() {
         guard addURLText.lowercased().hasPrefix("http") else { return }
-        if DownloadJob.looksLikePlaylist(addURLText) {
+        if DownloadJob.looksLikePlaylist(addURLText) && !DownloadService.isSoopOrAfreecaURL(addURLText) {
             playlistPromptURL = addURLText
             addURLText = ""
             showPlaylistPrompt = true
@@ -1411,7 +1411,7 @@ struct ClipboardBanner: View {
                 HStack(spacing: 5) {
                     Button {
                         let url = clipMonitor.detectedURL
-                        let isPlaylist = DownloadJob.looksLikePlaylist(url)
+                        let isPlaylist = DownloadJob.looksLikePlaylist(url) && !DownloadService.isSoopOrAfreecaURL(url)
                         watchLater.add(url: url, isPlaylist: isPlaylist)
                         clipMonitor.dismiss()
                     } label: {
