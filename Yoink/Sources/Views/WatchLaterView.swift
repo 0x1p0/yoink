@@ -48,9 +48,25 @@ struct WatchLaterView: View {
                     }
                 }
                 .padding(.horizontal, 10).padding(.vertical, 7)
-                .background(Color.primary.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
+                .background {
+                    let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    if #available(macOS 26.0, *) {
+                        shape
+                            .fill(Color.primary.opacity(0.05))
+                            .overlay {
+                                shape.strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5)
+                            }
+                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                            .allowsHitTesting(false)
+                    } else {
+                        shape
+                            .fill(Color.primary.opacity(0.06))
+                            .overlay {
+                                shape.strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5)
+                            }
+                            .allowsHitTesting(false)
+                    }
+                }
 
                 Text("\(filtered.count) saved").font(.system(size: 11)).foregroundStyle(.secondary)
 
@@ -123,7 +139,7 @@ struct WatchLaterView: View {
                             .background(Color.accentColor)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
-                        .buttonStyle(.plain).hoverHaptic()
+                        .buttonStyle(.plain)
                     }
                 }
 
@@ -217,8 +233,8 @@ struct WatchLaterView: View {
                         // Scheduled downloads - shown inline above saved items
                         if !pendingScheduled.isEmpty {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("SCHEDULED")
-                                    .font(.system(size: 10, weight: .bold))
+                                Text("Scheduled")
+                                    .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(.secondary)
                                     .padding(.horizontal, 4)
                                 ForEach(pendingScheduled) { item in
@@ -410,14 +426,31 @@ struct WLToggleChip: View {
             }
             .foregroundStyle(active ? activeColor : Color.primary.opacity(0.5))
             .padding(.horizontal, 9).padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(active ? activeColor.opacity(0.12) : Color.primary.opacity(hovered ? 0.06 : 0.04))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(active ? activeColor.opacity(0.35) : Color(.separatorColor).opacity(0.4), lineWidth: 0.5)
-            )
+            .background {
+                let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+                if #available(macOS 26.0, *) {
+                    shape
+                        .fill(active ? activeColor.opacity(0.12) : Color.primary.opacity(hovered ? 0.06 : 0.04))
+                        .overlay {
+                            shape.strokeBorder(
+                                active ? activeColor.opacity(0.35) : Color(.separatorColor).opacity(0.4),
+                                lineWidth: 0.5
+                            )
+                        }
+                        .glassEffect(.regular.interactive(hovered || active), in: shape)
+                        .allowsHitTesting(false)
+                } else {
+                    shape
+                        .fill(active ? activeColor.opacity(0.12) : Color.primary.opacity(hovered ? 0.06 : 0.04))
+                        .overlay {
+                            shape.strokeBorder(
+                                active ? activeColor.opacity(0.35) : Color(.separatorColor).opacity(0.4),
+                                lineWidth: 0.5
+                            )
+                        }
+                        .allowsHitTesting(false)
+                }
+            }
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
@@ -1054,8 +1087,8 @@ struct WLPlaylistScheduleSheet: View {
 
             VStack(alignment: .leading, spacing: 16) {
                 // Quick presets
-                Text("QUICK PRESETS")
-                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
+                Text("Quick Presets")
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 HStack(spacing: 8) {
                     ForEach(model.quickPresets, id: \.label) { p in
                         Button { model.applyPreset(p) } label: {
@@ -1072,8 +1105,8 @@ struct WLPlaylistScheduleSheet: View {
 
                 Divider().opacity(0.4)
 
-                Text("CUSTOM TIME")
-                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
+                Text("Custom Time")
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 NativeDatePicker(date: $model.selectedDate).frame(height: 22)
 
                 // Countdown
@@ -1234,7 +1267,7 @@ struct ScheduleSheet: View {
             VStack(alignment: .leading, spacing: 16) {
 
                 // Quick presets
-                Text("QUICK PRESETS").font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
+                Text("Quick Presets").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 HStack(spacing: 8) {
                     ForEach(model.quickPresets, id: \.label) { p in
                         Button {
@@ -1258,7 +1291,7 @@ struct ScheduleSheet: View {
                 Divider().opacity(0.4)
 
                 // Native AppKit date picker - SwiftUI cannot reset this
-                Text("CUSTOM TIME").font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
+                Text("Custom Time").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 NativeDatePicker(date: $model.selectedDate)
                     .frame(height: 22)
 

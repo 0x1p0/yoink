@@ -4,7 +4,15 @@ import UserNotifications
 
 // MARK: - AppDelegate
 
+enum YoinkWindowID {
+    static let main = NSUserInterfaceItemIdentifier("YoinkMainWindow")
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate {
+
+    private func isMainContentWindow(_ win: NSWindow) -> Bool {
+        !(win is NSPanel) && win.identifier == YoinkWindowID.main
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
@@ -41,11 +49,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
             forName: NSWindow.didBecomeKeyNotification,
             object: nil, queue: .main
         ) { [weak self] notif in
-            guard let win = notif.object as? NSWindow, !(win is NSPanel) else { return }
-            win.isOpaque = false
-            win.backgroundColor = .clear
-                if win.minSize.width >= 650 && win.styleMask.contains(.resizable) {
+            guard let self, let win = notif.object as? NSWindow else { return }
+            // Only the main content window is transparent — never Settings or panels.
+            if self.isMainContentWindow(win) {
+                win.isOpaque = false
+                win.backgroundColor = .clear
                 win.delegate = self
+            } else if !(win is NSPanel) {
+                win.isOpaque = true
+                if win.backgroundColor == .clear {
+                    win.backgroundColor = .windowBackgroundColor
+                }
             }
         }
     }
@@ -56,9 +70,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
 
     func makeWindowsTransparent() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            for win in NSApp.windows where !(win is NSPanel) {
+            for win in NSApp.windows where self.isMainContentWindow(win) {
                 win.isOpaque = false
                 win.backgroundColor = .clear
+                win.delegate = self
             }
         }
     }
@@ -78,7 +93,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         // Only intercept the main content window (not panels, settings, etc.)
-        guard sender.minSize.width >= 650 else { return true }
+        guard isMainContentWindow(sender) else { return true }
         // Hide the window instead of closing it
         sender.orderOut(nil)
         // Only remove from dock if the user hasn't opted to keep it there
@@ -91,7 +106,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
 
     func windowWillClose(_ notification: Notification) {
         guard let win = notification.object as? NSWindow else { return }
-        guard win.minSize.width >= 650 else { return }
+        guard isMainContentWindow(win) else { return }
         let showInDock = UserDefaults.standard.object(forKey: "showInDock") as? Bool ?? true
         if !showInDock {
             NSApp.setActivationPolicy(.accessory)
@@ -251,7 +266,8 @@ struct YoinkApp: App {
             }
         }
 
-        // Settings
+        // Settings — opaque bed so it never shows the main window through it.
+        // Leave room for system Liquid Glass chrome on macOS 26+.
         Settings {
             SettingsView()
                 .environmentObject(settings)
@@ -272,7 +288,6 @@ struct YoinkApp: App {
                 .accentColor(theme.accentColor)
         } label: {
             MenuBarProgressLabel(queue: queue, settings: settings)
-                .onHover { if $0 { Haptics.hover() } }
         }
         .menuBarExtraStyle(.window)
     }

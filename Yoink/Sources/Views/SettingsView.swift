@@ -1,106 +1,39 @@
 import SwiftUI
 
-// MARK: - Settings Window
+// MARK: - Settings Window (native sidebar TabView)
 
 struct SettingsView: View {
     @EnvironmentObject var settings:   SettingsManager
     @EnvironmentObject var deps:       DependencyService
     @EnvironmentObject var theme:      ThemeManager
     @EnvironmentObject var appUpdate:  AppUpdateService
-    @State private var section: SettingsSection = .appearance
-
-    enum SettingsSection: String, CaseIterable, Identifiable {
-        case appearance  = "Appearance"
-        case downloads   = "Downloads"
-        case output      = "Output"
-        case network     = "Network"
-        case automation  = "Automation"
-        case performance = "Performance"
-        case advanced    = "Advanced"
-        case about       = "About"
-        var id: String { rawValue }
-        var icon: String {
-            switch self {
-            case .appearance:  return "paintpalette"
-            case .downloads:   return "arrow.down.circle"
-            case .output:      return "folder"
-            case .network:     return "network"
-            case .automation:  return "bolt.badge.automatic"
-            case .performance: return "cpu"
-            case .advanced:    return "gearshape.2"
-            case .about:       return "info.circle"
-            }
-        }
-    }
 
     var body: some View {
-        HStack(spacing: 0) {
-            // ── Sidebar ──────────────────────────────────────────────────
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(SettingsSection.allCases) { sec in
-                    SidebarItem(label: sec.rawValue, icon: sec.icon,
-                                selected: section == sec) { section = sec }
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 16)
-            .frame(width: 176)
-            .background(Color(.windowBackgroundColor))
-
-            Divider()
-
-            // ── Detail ───────────────────────────────────────────────────
-            Group {
-                switch section {
-                case .appearance:  AppearanceSettings()
-                case .downloads:   DownloadSettings()
-                case .output:      OutputSettings()
-                case .network:     NetworkSettings()
-                case .automation:  AutomationSettings()
-                case .performance: PerformanceSettings()
-                case .advanced:    AdvancedSettings()
-                case .about:       AboutSettings()
-                }
-            }
-            .environmentObject(settings)
-            .environmentObject(deps)
-            .environmentObject(theme)
-            .environmentObject(appUpdate)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(.windowBackgroundColor))
+        TabView {
+            AppearanceSettings()
+                .tabItem { Label("Appearance", systemImage: "paintbrush.pointed") }
+            DownloadSettings()
+                .tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
+            OutputSettings()
+                .tabItem { Label("Output", systemImage: "folder") }
+            NetworkSettings()
+                .tabItem { Label("Network", systemImage: "network") }
+            AutomationSettings()
+                .tabItem { Label("Automation", systemImage: "gearshape.2") }
+            PerformanceSettings()
+                .tabItem { Label("Performance", systemImage: "gauge.with.needle") }
+            AdvancedSettings()
+                .tabItem { Label("Advanced", systemImage: "slider.horizontal.3") }
+            AboutSettings()
+                .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .background(Color(.windowBackgroundColor))
-        .frame(minWidth: 680, idealWidth: 720, minHeight: 520, idealHeight: 600)
-    }
-}
-
-struct SidebarItem: View {
-    let label: String; let icon: String; let selected: Bool; let action: () -> Void
-    @State private var hovered = false
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 9) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
-                    .frame(width: 18)
-                Text(label)
-                    .font(.system(size: 13, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? Color.primary : Color.secondary)
-                Spacer()
-            }
-            .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(selected ? Color.accentColor.opacity(0.12)
-                                  : (hovered ? Color.primary.opacity(0.06) : Color.clear))
-            )
-        }
-        .buttonStyle(.plain)
-        .onHover { hovered = $0 }
-        .hoverHaptic()
-        .animation(.easeOut(duration: 0.1), value: hovered)
+        .environmentObject(settings)
+        .environmentObject(deps)
+        .environmentObject(theme)
+        .environmentObject(appUpdate)
+        .frame(minWidth: 700, idealWidth: 740, minHeight: 540, idealHeight: 620)
+        // System Settings chrome (toolbar/sidebar) supplies Liquid Glass on macOS 26+.
+        // Do not paint an opaque window background over it.
     }
 }
 
@@ -110,19 +43,53 @@ struct SettingsGroup<Content: View>: View {
     let title: String
     @ViewBuilder var content: Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
+        VStack(alignment: .leading, spacing: 8) {
+            // Title Case per current HIG — not all-caps
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 2)
+                .padding(.horizontal, 4)
+
             VStack(spacing: 0) {
                 content
             }
-            // Dividers are painted as a background overlay so the last one is clipped away
-            .background(Color(.controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color(.separatorColor).opacity(0.45), lineWidth: 0.5))
+            .padding(0)
+            .background { groupSurface }
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .modifier(SettingsGroupGlassModifier())
+        }
+    }
+
+    @ViewBuilder
+    private var groupSurface: some View {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        if #available(macOS 26.0, *) {
+            shape
+                .fill(.thinMaterial)
+                .overlay {
+                    shape.strokeBorder(Color(.separatorColor).opacity(0.30), lineWidth: 0.5)
+                }
+                .allowsHitTesting(false)
+        } else {
+            shape
+                .fill(Color(.controlBackgroundColor))
+                .overlay {
+                    shape.strokeBorder(Color(.separatorColor).opacity(0.45), lineWidth: 0.5)
+                }
+                .allowsHitTesting(false)
+        }
+    }
+}
+
+struct SettingsGroupGlassModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.glassEffect(
+                .regular,
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+        } else {
+            content
         }
     }
 }
@@ -149,33 +116,33 @@ struct SettingsRow<Content: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             if let icon {
                 Image(systemName: icon)
-                    .font(.system(size: 13)).foregroundStyle(.secondary).frame(width: 18)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26, height: 26)
+                    .background(Circle().fill(Color.primary.opacity(0.06)))
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(.system(size: 13))
-                if let detail { Text(detail).font(.system(size: 11)).foregroundStyle(.secondary) }
+                Text(label).font(.system(size: 13, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let detail {
+                    Text(detail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            Spacer()
+            Spacer(minLength: 12)
             trailing
-                .frame(minWidth: 44, alignment: .trailing)
+                .frame(minHeight: 26, alignment: .center)
         }
-        .padding(.horizontal, 16).padding(.vertical, 11)
-    }
-}
-
-// MARK: - Color hex helper (used in ThemeCell previews)
-
-extension Color {
-    init(hex: String) {
-        let h = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-        let val = UInt64(h, radix: 16) ?? 0
-        let r = Double((val >> 16) & 0xFF) / 255
-        let g = Double((val >> 8)  & 0xFF) / 255
-        let b = Double( val        & 0xFF) / 255
-        self.init(red: r, green: g, blue: b)
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.primary.opacity(0.06)).frame(height: 0.5)
+                .padding(.leading, 16)
+        }
     }
 }
 
@@ -187,72 +154,55 @@ struct ThemeCell: View {
     let action: () -> Void
     @State private var hovered = false
 
-    /// Preview swatch background - matches ThemeManager.windowBackground
-    var bg: Color {
-        switch appTheme {
-        case .system:    return Color(.windowBackgroundColor)
-        case .midnight:  return Color(hex: "#121224")   // deep navy
-        case .dawn:      return Color(hex: "#FCF2DC")   // warm parchment
-        case .forest:    return Color(hex: "#D9F5DE")   // jade mint
-        case .ocean:     return Color(hex: "#071E2E")   // deep teal-blue
-        case .monoDark:  return Color(hex: "#0A0A0A")   // mono dark bg-0
-        case .slate:     return Color(hex: "#231B34")   // purple-grey
-        case .monoLight: return Color(hex: "#FAFAFA")   // mono light bg-0
-        }
+    var previewScheme: ColorScheme {
+        appTheme.colorScheme
+            ?? (NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light)
     }
-    /// Accent dot - vivid, unmistakably distinct per theme
-    var dot: Color {
-        switch appTheme {
-        case .system:    return .accentColor
-        case .midnight:  return Color(hex: "#6B94FF")   // violet-blue
-        case .dawn:      return Color(hex: "#F5700D")   // amber-orange
-        case .forest:    return Color(hex: "#0DC74C")   // leaf green
-        case .ocean:     return Color(hex: "#00D1E0")   // electric teal/cyan
-        case .monoDark:  return Color(hex: "#E83B2E")   // signature red dark
-        case .slate:     return Color(hex: "#AC7AFF")   // lavender-purple
-        case .monoLight: return Color(hex: "#D42D1E")   // signature red light
-        }
-    }
-    var isDark: Bool { appTheme.colorScheme == .dark }
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 5) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(bg)
-                        .frame(width: 56, height: 40)
-                    // Accent dot preview
-                    HStack(spacing: 4) {
-                        ForEach(0..<3) { i in
-                            Circle().fill(i == 0 ? dot : dot.opacity(0.4 - Double(i) * 0.1))
-                                .frame(width: i == 0 ? 8 : 5)
+                    // Mini window preview using native system colors
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color(previewScheme == .dark ? .windowBackgroundColor : .windowBackgroundColor))
+                        .frame(width: 72, height: 44)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(Color(.separatorColor).opacity(0.6), lineWidth: 1)
+                        )
+                        .overlay(alignment: .topLeading) {
+                            // Fake sidebar + content lines
+                            VStack(alignment: .leading, spacing: 3) {
+                                Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+                                ForEach(0..<3, id: \.self) { i in
+                                    RoundedRectangle(cornerRadius: 1)
+                                        .fill(Color.secondary.opacity(0.35 - Double(i) * 0.08))
+                                        .frame(width: 28 - CGFloat(i) * 4, height: 3)
+                                }
+                            }
+                            .padding(7)
                         }
-                    }
                     if selected {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(dot, lineWidth: 2.5)
-                            .frame(width: 56, height: 40)
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Color.accentColor, lineWidth: 2.5)
+                            .frame(width: 72, height: 44)
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 13))
-                            .foregroundStyle(dot)
-                            .background(Circle().fill(bg).frame(width: 12, height: 12))
-                            .offset(x: 19, y: -14)
-                    } else {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(hovered ? 0.18 : 0.08), lineWidth: 1)
-                            .frame(width: 56, height: 40)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.accentColor)
+                            .background(Circle().fill(Color(.windowBackgroundColor)).frame(width: 14, height: 14))
+                            .offset(x: 28, y: -16)
                     }
                 }
                 Text(appTheme.rawValue)
-                    .font(.system(size: 10, weight: selected ? .semibold : .regular))
+                    .font(.system(size: 11, weight: selected ? .semibold : .regular))
                     .foregroundStyle(selected ? Color.primary : Color.secondary)
             }
         }
         .buttonStyle(.plain)
-        .scaleEffect(hovered ? 1.04 : 1.0)
+        .scaleEffect(hovered ? 1.03 : 1.0)
         .animation(.spring(response: 0.18, dampingFraction: 0.7), value: hovered)
-        .onHover { hovered = $0; if $0 { Haptics.hover() } }
+        .onHover { hovered = $0 }
     }
 }
 
@@ -265,32 +215,31 @@ struct AppearanceSettings: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 24) {
 
-                // ── Background blur - top priority, always visible ─────────
-                SettingsGroup(title: "Background") {
-                    SettingsRow("Frosted glass / blur",
-                                detail: "Main window AND menu bar both use macOS acrylic - looks best with dark themes",
+                // ── Background / materials ─────────────────────────────
+                SettingsGroup(title: "Materials") {
+                    SettingsRow("Liquid Glass chrome",
+                                detail: "Floating header, toolbar, and cards use macOS 26 glass. Turn off for solid surfaces.",
                                 icon: "sparkles") {
                         Toggle("", isOn: $settings.useBlurBackground)
                             .labelsHidden()
-                            .onChange(of: settings.useBlurBackground) { _ in Haptics.tap() }
                     }
                 }
 
                 // ── Theme ─────────────────────────────────────────────────
-                SettingsGroup(title: "Theme") {
+                SettingsGroup(title: "Appearance") {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Changes both main app and menu bar instantly")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text("Follow your Mac, or force light/dark. Accent color always comes from System Settings.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                             .padding(.horizontal, 14).padding(.top, 12)
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 12) {
+                        HStack(spacing: 16) {
                             ForEach(AppTheme.allCases) { t in
                                 ThemeCell(appTheme: t, selected: theme.current == t) {
                                     withAnimation(.spring(response: 0.2)) { theme.set(t) }
-                                    Haptics.toggleOn()
                                 }
                             }
+                            Spacer()
                         }
-                        .padding(.horizontal, 14).padding(.bottom, 14).padding(.top, 6)
+                        .padding(.horizontal, 14).padding(.bottom, 14).padding(.top, 8)
                     }
                     Divider().opacity(0)
                 }
@@ -388,13 +337,9 @@ struct AppearanceSettings: View {
                 // ── Haptics ───────────────────────────────────────────────
                 SettingsGroup(title: "Haptic Feedback") {
                     SettingsRow("Enable haptics",
-                                detail: "Trackpad feedback on hover, download events",
+                                detail: "Off by default — native macOS apps don't use trackpad haptics",
                                 icon: "hand.point.up.left") {
                         Toggle("", isOn: $settings.hapticsEnabled).labelsHidden()
-                            .onChange(of: settings.hapticsEnabled) { _ in
-                                // Fire async so we don't publish during view update
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { Haptics.tap() }
-                            }
                     }
                     SettingsDivider()
                     SettingsRow("Intensity",
@@ -454,7 +399,7 @@ struct IconCell: View {
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
-        .hoverHaptic()
+
         .help(icon.label)
         .animation(.easeOut(duration: 0.1), value: hovered)
     }
@@ -644,7 +589,7 @@ struct SiteFormatOverridesEditor: View {
                 // Add-site section
                 Divider().opacity(0.07)
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("ADD SITE")
+                    Text("Add Site")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(.tertiary)
 
@@ -834,7 +779,7 @@ struct OutputCategoryEditor: View {
                     .background(Color.accentColor.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 7))
                 }
-                .buttonStyle(.plain).hoverHaptic()
+                .buttonStyle(.plain)
             }
             .padding(14)
             Divider().opacity(0)
@@ -914,7 +859,7 @@ struct OutputCategoryRow: View {
                 .overlay(RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5))
             }
-            .buttonStyle(.plain).hoverHaptic()
+            .buttonStyle(.plain)
             .help(category.path.isEmpty ? "Choose a folder" : category.path)
 
             Button(action: onDelete) {
@@ -922,7 +867,7 @@ struct OutputCategoryRow: View {
                     .font(.system(size: 14))
                     .foregroundStyle(Color.red.opacity(0.6))
             }
-            .buttonStyle(.plain).hoverHaptic()
+            .buttonStyle(.plain)
         }
     }
 }
@@ -965,7 +910,7 @@ struct CategoryPicker: View {
                     .strokeBorder(Color.accentColor.opacity(0.25), lineWidth: 0.5))
             }
             .buttonStyle(.plain)
-            .hoverHaptic()
+
             .help("Save location category")
         }
     }
@@ -1016,7 +961,7 @@ struct TemplateTokens: View {
 
             // Quick presets
             VStack(alignment: .leading, spacing: 6) {
-                Text("QUICK PRESETS")
+                Text("Quick Presets")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.tertiary)
                 HStack(spacing: 6) {
@@ -1039,7 +984,7 @@ struct TemplateTokens: View {
                                         : Color(.separatorColor).opacity(0.4), lineWidth: 0.5))
                         }
                         .buttonStyle(.plain)
-                        .hoverHaptic()
+
                         .help(p.value)
                     }
                 }
@@ -1444,7 +1389,7 @@ struct AboutSettings: View {
                 .overlay(Capsule().strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5))
             }
             .buttonStyle(.plain)
-            .hoverHaptic()
+
 
             // Dep chips
             VStack(spacing: 10) {
@@ -1455,7 +1400,7 @@ struct AboutSettings: View {
 
             HStack(spacing: 14) {
                 Link("yt-dlp on GitHub", destination: URL(string: "https://github.com/yt-dlp/yt-dlp")!)
-                Link("Homebrew", destination: URL(string: "https://brew.sh")!)
+                Link("Source", destination: URL(string: "https://github.com/0x1p0/yoink")!)
             }
             .font(.system(size: 13)).foregroundStyle(Color.accentColor)
 
@@ -1476,7 +1421,7 @@ struct AboutSettings: View {
                 .overlay(Capsule().strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5))
             }
             .buttonStyle(.plain)
-            .hoverHaptic()
+
 
             Spacer()
         }
@@ -1688,7 +1633,7 @@ struct EmojiProgressSetEditor: View {
                             .overlay(RoundedRectangle(cornerRadius: 7)
                                 .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
                         }
-                        .buttonStyle(.plain).hoverHaptic()
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.vertical, 2)
@@ -1726,7 +1671,7 @@ struct EmojiProgressSetEditor: View {
                     .overlay(RoundedRectangle(cornerRadius: 7)
                         .strokeBorder(Color.accentColor.opacity(0.25), lineWidth: 0.5))
                 }
-                .buttonStyle(.plain).hoverHaptic()
+                .buttonStyle(.plain)
                 .popover(isPresented: $showBulkInput, arrowEdge: .bottom) {
                     BulkEmojiInputPopover(input: $bulkInput, onApply: { str in
                         let parsed = parseEmojis(str)
@@ -2043,7 +1988,7 @@ struct AutomationSettings: View {
 
                 // Scheduled downloads
                 if !scheduled.items.isEmpty {
-                    SettingsGroup(title: "Scheduled Downloads (\(scheduled.items.count))") {
+                    SettingsGroup(title: "Schedule") {
                         VStack(spacing: 0) {
                             ForEach(scheduled.items) { item in
                                 ScheduledItemRow(item: item)

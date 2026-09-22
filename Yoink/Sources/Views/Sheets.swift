@@ -54,12 +54,12 @@ struct DepSheet: View {
                 )
                 .padding(24)
             } else {
-                // yt-dlp (unchanged behaviour)
+                // yt-dlp — self-updates from the official universal binary
                 BinaryStatusRow(
                     binary: "yt-dlp",
                     status: deps.ytdlp,
                     latestVersion: nil,
-                    onUpdate: nil
+                    onUpdate: { deps.forceUpdateYtdlp() }
                 )
                 .padding(24)
             }
@@ -100,23 +100,25 @@ struct DepSheet: View {
         .frame(width: 460)
         .background(.background)
         .task {
-            // Check versions on open (only for ffmpeg panel)
             guard tool == "ffmpeg" else { return }
-            await deps.checkFfmpeg()
-            await deps.checkFfprobe()
-            // Fetch latest release versions from evermeet.cx
-            async let fm = fetchLatestVersion("ffmpeg")
-            async let fp = fetchLatestVersion("ffprobe")
-            let (fmv, fpv) = await (fm, fp)
-            ffmpegLatest  = fmv
-            ffprobeLatest = fpv
+            async let checkF: () = deps.checkFfmpeg()
+            async let checkP: () = deps.checkFfprobe()
+            _ = await (checkF, checkP)
+            if let latest = await deps.fetchLatestFfmpegVersion() {
+                ffmpegLatest = latest
+                ffprobeLatest = latest
+            }
+        }
+        .task(id: tool) {
+            guard tool == "yt-dlp" else { return }
+            await deps.checkYtdlp()
         }
     }
 
     var toolDescription: String {
         tool == "ffmpeg"
-            ? "Audio & video processing - required for merging streams"
-            : "Universal media downloader - supports 1000+ sites"
+            ? "Universal audio & video processing — required for merging streams"
+            : "Universal media downloader — supports 1000+ sites, no Python required"
     }
 
     func logColor(_ line: String) -> Color {
@@ -124,14 +126,6 @@ struct DepSheet: View {
         if line.hasPrefix("✗") || line.hasPrefix("Error") { return .red }
         if line.hasPrefix("⬆") { return Color.accentColor }
         return .secondary
-    }
-
-    private func fetchLatestVersion(_ binary: String) async -> String? {
-        guard let url = URL(string: "https://evermeet.cx/ffmpeg/info/\(binary)/release"),
-              let (data, _) = try? await URLSession.shared.data(from: url),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let version = json["version"] as? String else { return nil }
-        return version
     }
 }
 
@@ -194,8 +188,16 @@ struct BinaryStatusRow: View {
             } else if updateAvailable, let onUpdate {
                 Button("Update") { onUpdate() }
                     .buttonStyle(PrimaryButtonStyle())
+            } else if let onUpdate, status.isReady {
+                // Offer a manual refresh for yt-dlp (critical when YouTube changes)
+                Button("Update") { onUpdate() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.horizontal, 10).frame(height: 26)
+                    .background(Color.accentColor.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             } else if status == .unknown || status == .missing {
-                // no check button needed, .task handles it
                 EmptyView()
             }
         }

@@ -41,10 +41,25 @@ struct AdvancedView: View {
                         .onSubmit { fetchPlaylist() }
                 }
                 .padding(.horizontal, 14).padding(.vertical, 11)
-                .background(Color.primary.opacity(0.04))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
+                .background {
+                    let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    if #available(macOS 26.0, *) {
+                        shape
+                            .fill(Color.primary.opacity(0.04))
+                            .overlay {
+                                shape.strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5)
+                            }
+                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                            .allowsHitTesting(false)
+                    } else {
+                        shape
+                            .fill(Color.primary.opacity(0.04))
+                            .overlay {
+                                shape.strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5)
+                            }
+                            .allowsHitTesting(false)
+                    }
+                }
 
                 Button { fetchPlaylist() } label: {
                     Group {
@@ -56,16 +71,18 @@ struct AdvancedView: View {
                         }
                     }
                 }
-                .buttonStyle(PrimaryButtonStyle())
+                .glassPrimaryButtonStyle()
                 .disabled(playlistURL.isEmpty || fetchState == .fetching)
-                .hoverHaptic()
+
             }
             .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8)
             .onAppear {
                 // Pick up URL handed off from Video mode
-                if !settings.pendingPlaylistURL.isEmpty {
-                    playlistURL = settings.pendingPlaylistURL
-                    settings.pendingPlaylistURL = ""
+                let handed = settings.pendingPlaylistURL
+                guard !handed.isEmpty else { return }
+                settings.pendingPlaylistURL = ""
+                DispatchQueue.main.async {
+                    playlistURL = handed
                     fetchPlaylist()
                 }
             }
@@ -137,7 +154,7 @@ struct AdvancedView: View {
                         .overlay(RoundedRectangle(cornerRadius: 7)
                             .strokeBorder(Color.purple.opacity(allSponsor ? 0 : 0.3), lineWidth: 0.5))
                     }
-                    .buttonStyle(.plain).hoverHaptic()
+                    .buttonStyle(.plain)
                     .help(allSponsor ? "Disable SponsorBlock for all" : "Enable SponsorBlock for all videos")
 
                     Button {
@@ -153,7 +170,7 @@ struct AdvancedView: View {
                             .background(Color.accentColor.opacity(0.09))
                             .clipShape(RoundedRectangle(cornerRadius: 7))
                     }
-                    .buttonStyle(.plain).hoverHaptic()
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 6)
 
@@ -229,7 +246,7 @@ struct AdvancedView: View {
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(selectedItems.isEmpty || downloadRunning)
-                .hoverHaptic()
+
             }
             .padding(.horizontal, 20).padding(.vertical, 10)
             .background(.ultraThinMaterial)
@@ -523,8 +540,8 @@ struct PlaylistItemRow: View {
 
                     // Row 1: Video quality picker (real formats if available, else DownloadFormat)
                     HStack(spacing: 8) {
-                        Text("QUALITY")
-                            .font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+                        Text("Quality")
+                            .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                             .frame(width: 52, alignment: .leading)
                         if !item.videoFormats.isEmpty {
                             Menu {
@@ -595,8 +612,8 @@ struct PlaylistItemRow: View {
                     // Audio track picker (when video format selected and audio formats available)
                     if item.selectedVideoFormatId != "audio" && !item.audioFormats.isEmpty {
                         HStack(spacing: 8) {
-                            Text("AUDIO")
-                                .font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+                            Text("Audio")
+                                .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                                 .frame(width: 52, alignment: .leading)
                             Menu {
                                 Button {
@@ -637,8 +654,8 @@ struct PlaylistItemRow: View {
 
                     // Subtitles row
                     HStack(spacing: 8) {
-                        Text("SUBS")
-                            .font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+                        Text("Subtitles")
+                            .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                             .frame(width: 52, alignment: .leading)
                         Toggle("", isOn: $item.downloadSubs.animation()).labelsHidden().toggleStyle(SlimToggleStyle())
                         Text("Download subtitles").font(.system(size: 11)).foregroundStyle(item.downloadSubs ? .primary : .secondary)
@@ -654,8 +671,8 @@ struct PlaylistItemRow: View {
 
                     // SponsorBlock row
                     HStack(spacing: 8) {
-                        Text("SPON.")
-                            .font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+                        Text("Sponsors")
+                            .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                             .frame(width: 52, alignment: .leading)
                         Toggle("", isOn: $item.sponsorBlock.animation()).labelsHidden().toggleStyle(SlimToggleStyle())
                         Text("Skip sponsors").font(.system(size: 11)).foregroundStyle(item.sponsorBlock ? .primary : .secondary)
@@ -664,18 +681,18 @@ struct PlaylistItemRow: View {
 
                     // Row 2: Clip start → end
                     HStack(spacing: 10) {
-                        Text("CLIP")
-                            .font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+                        Text("Clip")
+                            .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                             .frame(width: 52, alignment: .leading)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("START").font(.system(size: 8, weight: .semibold)).foregroundStyle(.tertiary)
+                            Text("Start").font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
                             MiniHMSInput(h: $item.startH, m: $item.startM, s: $item.startS)
                         }
                         Image(systemName: "arrow.right")
                             .font(.system(size: 9)).foregroundStyle(.tertiary)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 4) {
-                                Text("END").font(.system(size: 8, weight: .semibold)).foregroundStyle(.tertiary)
+                                Text("End").font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
                                 Text("/ \(item.duration)").font(.system(size: 8, design: .monospaced)).foregroundStyle(.tertiary)
                             }
                             MiniHMSInput(h: $item.endH, m: $item.endM, s: $item.endS)
@@ -688,8 +705,8 @@ struct PlaylistItemRow: View {
                         VStack(alignment: .leading, spacing: 6) {
                             // Mode toggle
                             HStack(spacing: 8) {
-                                Text("CHAPTER")
-                                    .font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+                                Text("Chapter")
+                                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                                     .frame(width: 52, alignment: .leading)
                                 HStack(spacing: 0) {
                                     ForEach([("scissors", "Start/End", DownloadJob.SegmentMode.manual),
@@ -742,7 +759,7 @@ struct PlaylistItemRow: View {
                                                     .background(Color.accentColor.opacity(0.09))
                                                     .clipShape(RoundedRectangle(cornerRadius: 5))
                                                 }
-                                                .buttonStyle(.plain).hoverHaptic()
+                                                .buttonStyle(.plain)
                                             }
                                         }
                                     }
@@ -822,10 +839,7 @@ struct PlaylistItemRow: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .opacity(item.selected ? 1 : 0.45)
-        .onHover { h in
-            hovered = h
-            if h { Haptics.hover() }
-        }
+        .onHover { hovered = $0 }
         .animation(.easeOut(duration: 0.1), value: hovered)
         .animation(.spring(response: 0.22, dampingFraction: 0.82), value: expanded)
     }
@@ -864,7 +878,7 @@ struct AdvancedFlagsPanel: View {
                 .padding(.horizontal, 20).padding(.vertical, 11)
             }
             .buttonStyle(.plain)
-            .hoverHaptic()
+
 
             if expanded {
                 Divider().opacity(0.07)
@@ -945,7 +959,7 @@ struct AdvancedFlagsPanel: View {
                                         .background(Color.accentColor.opacity(0.09))
                                         .clipShape(RoundedRectangle(cornerRadius: 5))
                                 }
-                                .buttonStyle(.plain).hoverHaptic()
+                                .buttonStyle(.plain)
                             }
                             Spacer()
                         }
@@ -965,7 +979,7 @@ struct AdvancedFlagsPanel: View {
 
                         // Common flags reference
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("COMMON FLAGS").font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
+                            Text("Common Flags").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                             let flags: [(String, String)] = [
                                 ("--no-mtime", "Don't set file mtime"),
                                 ("--geo-bypass", "Bypass geo-restriction"),
@@ -992,7 +1006,7 @@ struct AdvancedFlagsPanel: View {
                                             .clipShape(RoundedRectangle(cornerRadius: 4))
                                     }
                                     .buttonStyle(.plain)
-                                    .hoverHaptic()
+
                                     Text(desc).font(.system(size: 11)).foregroundStyle(.secondary)
                                 }
                             }

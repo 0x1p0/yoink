@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import AppKit
 
 // MARK: - Cached thumbnail view (uses global ThumbnailCache)
@@ -88,54 +89,57 @@ struct MenuBarView: View {
     // The popover window has its own surface - we can't rely on SwiftUI's adaptive colours.
     // Compute everything explicitly so every theme looks perfect.
     var isDark: Bool {
-        switch theme.current {
-        case .system:   return NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        default:        return theme.current.colorScheme == .dark
+        if let forced = theme.current.colorScheme {
+            return forced == .dark
         }
+        return NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 
-    var fg: Color       { isDark ? Color.white.opacity(0.92) : Color.black.opacity(0.85) }
-    var fgSec: Color    { fg.opacity(0.50) }
-    var fgTer: Color    { fg.opacity(0.28) }
+    // High-contrast tokens — menu bar text must stay readable on any wallpaper
+    var fg: Color       { isDark ? Color.white : Color.black }
+    var fgSec: Color    { isDark ? Color.white.opacity(0.78) : Color.black.opacity(0.70) }
+    var fgTer: Color    { isDark ? Color.white.opacity(0.58) : Color.black.opacity(0.55) }
     var surfaceBg: Color {
-        // Solid background tinted per-theme
-        switch theme.current {
-        case .system:   return isDark ? Color(white: 0.15) : Color(white: 0.97)
-        case .midnight: return Color(red: 0.08, green: 0.09, blue: 0.15)
-        case .dawn:     return Color(red: 0.99, green: 0.96, blue: 0.88)
-        case .forest:   return Color(red: 0.86, green: 0.97, blue: 0.88)
-        case .ocean:    return Color(red: 0.04, green: 0.12, blue: 0.19)
-        case .monoDark:  return Color(red: 0.07, green: 0.07, blue: 0.07)
-        case .slate:    return Color(red: 0.14, green: 0.11, blue: 0.20)
-        case .monoLight: return Color(red: 0.94, green: 0.94, blue: 0.94)
-        }
+        isDark ? Color(white: 0.11) : Color.white
     }
-    var rowBg: Color    { fg.opacity(0.04) }
-    var rowBorder: Color { fg.opacity(0.10) }
+    /// Elevated well/card fill — light mode gets near-solid white cards, not gray glass
+    var cardFill: Color { isDark ? Color.white.opacity(0.07) : Color.white }
+    var cardFillHover: Color { isDark ? Color.white.opacity(0.11) : Color(white: 0.96) }
+    var cardBorder: Color { isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.10) }
+    var rowBg: Color    { isDark ? Color.white.opacity(0.06) : Color(white: 0.95) }
+    var rowBorder: Color { isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.10) }
     var accent: Color   { theme.accentColor }
+    /// Placeholder text for empty TextField prompts (light mode secondary is too washed on cards)
+    var placeholder: Color { isDark ? Color.white.opacity(0.50) : Color.black.opacity(0.45) }
+    var isLightBg: Bool { !isDark }
 
     var body: some View {
         VStack(spacing: 0) {
             headerSection
-            Divider().foregroundStyle(fg.opacity(0.12))
 
             if isPlaylistMode {
                 playlistSection
             } else {
                 singleVideoSection
-                Divider().foregroundStyle(fg.opacity(0.08))
-                jobsSection
-                Divider().foregroundStyle(fg.opacity(0.06))
                 footerSection
             }
         }
         .frame(width: 430)
-        .background(
+        // System menu-bar windows already supply Liquid Glass on macOS 26+.
+        // A second full-bleed glassEffect here was rendering as a giant circle.
+        // Light mode must stay nearly opaque white — translucency over a dark
+        // wallpaper was turning the whole popover into unreadable gray mush.
+        .background {
             ZStack {
-                VisualEffectBlur(material: .popover)
-                surfaceBg.opacity(isDark ? 0.55 : 0.45)
+                if isDark {
+                    VisualEffectBlur(material: .hudWindow)
+                    surfaceBg.opacity(0.88)
+                } else {
+                    VisualEffectBlur(material: .popover)
+                    surfaceBg.opacity(0.97)
+                }
             }
-        )
+        }
         .foregroundStyle(fg)
         .accentColor(accent)
         .onReceive(timer) { _ in tick += 1 }
@@ -165,38 +169,95 @@ struct MenuBarView: View {
     // MARK: - Header
 
     var headerSection: some View {
-        HStack(spacing: 10) {
-            MenuBarMiniRing(queue: queue, accent: accent, tick: tick)
+        HStack(spacing: 12) {
+            // Progress / status glyph — subtle, not a giant ring
+            ZStack {
+                Circle()
+                    .fill(accent.opacity(0.12))
+                    .frame(width: 34, height: 34)
+                if hasActiveJobs {
+                    Circle()
+                        .trim(from: 0, to: activeProgress)
+                        .stroke(accent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                        .frame(width: 34, height: 34)
+                        .rotationEffect(.degrees(-90))
+                        .animation(.linear(duration: 0.45), value: activeProgress)
+                    Text("\(Int(activeProgress * 100))")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(accent)
+                } else {
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(accent)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Yoink")
                     .font(.system(size: 15, weight: .heavy, design: .serif))
-                    .tracking(0.8)
+                    .tracking(0.4)
                     .foregroundStyle(fg)
                 Text(headerSubtitle)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(fgSec)
                     .animation(.spring(response: 0.3), value: headerSubtitle)
             }
             Spacer()
-            HStack(spacing: 6) {
-                DepDot(label: "yt-dlp", status: deps.ytdlp, fg: fg)
-                DepDot(label: "ffmpeg", status: deps.ffmpeg, fg: fg)
-            }
-            Button { openMainWindow() } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "macwindow").font(.system(size: 10, weight: .semibold))
-                    Text("Open App").font(.system(size: 11, weight: .semibold))
+
+                HStack(spacing: 10) {
+                    DepDot(label: "yt-dlp", status: deps.ytdlp, fg: fg)
+                    DepDot(label: "ffmpeg", status: deps.ffmpeg, fg: fg)
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(accent)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
+
+                if #available(macOS 26.0, *) {
+                    Button { openMainWindow() } label: {
+                        Label("Open", systemImage: "macwindow")
+                            .font(.system(size: 11, weight: .semibold))
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.glass)
+                } else {
+                    Button { openMainWindow() } label: {
+                        Label("Open", systemImage: "macwindow")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(fg)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 6)
+                            .background(fg.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .strokeBorder(rowBorder, lineWidth: 0.5)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .background {
+                if #available(macOS 26.0, *) {
+                    Rectangle()
+                        .fill(isDark ? fg.opacity(0.05) : Color.white.opacity(0.55))
+                        .glassEffect(.regular.interactive(), in: Rectangle())
+                        .allowsHitTesting(false)
+                } else {
+                    isDark ? fg.opacity(0.06) : Color.white.opacity(0.6)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(rowBorder).frame(height: 0.5)
+            }
         }
-        .padding(.horizontal, 14).padding(.vertical, 9)
-        .background(surfaceBg.opacity(0.3))
+
+    private var hasActiveJobs: Bool {
+        _ = tick
+        return queue.jobs.contains { $0.status.isActive }
+    }
+    private var activeProgress: Double {
+        _ = tick
+        let a = queue.jobs.filter { $0.status.isActive }
+        guard !a.isEmpty else { return 0 }
+        return a.map { $0.status.progress }.reduce(0, +) / Double(a.count)
     }
 
     // MARK: - Single-video section
@@ -210,7 +271,8 @@ struct MenuBarView: View {
                     Image(systemName: siteIcon(newURL))
                         .font(.system(size: 12)).foregroundStyle(accent.opacity(0.85))
                         .frame(width: 16)
-                    TextField("Paste URL - YouTube, Twitch, Vimeo…", text: $newURL)
+                    TextField("", text: $newURL, prompt: Text("Paste URL — YouTube, Twitch, Vimeo…")
+                        .foregroundColor(placeholder))
                         .textFieldStyle(.plain).font(.system(size: 13)).foregroundStyle(fg)
                         .focused($urlFieldFocused)
                         .onChange(of: newURL) { handleURLChange($0) }
@@ -230,10 +292,25 @@ struct MenuBarView: View {
                     }
                 }
                 .padding(.horizontal, 10).padding(.vertical, 9)
-                .background(fg.opacity(0.07))
-                .clipShape(RoundedRectangle(cornerRadius: 9))
-                .overlay(RoundedRectangle(cornerRadius: 9)
-                    .strokeBorder(rowBorder, lineWidth: 0.5))
+                .background {
+                    let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    if #available(macOS 26.0, *) {
+                        shape
+                            .fill(cardFill)
+                            .overlay {
+                                shape.strokeBorder(rowBorder, lineWidth: 0.5)
+                            }
+                            .glassEffect(.regular, in: shape)
+                            .allowsHitTesting(false)
+                    } else {
+                        shape
+                            .fill(cardFill)
+                            .overlay {
+                                shape.strokeBorder(rowBorder, lineWidth: 0.5)
+                            }
+                            .allowsHitTesting(false)
+                    }
+                }
 
                 Button {
                     if showPlaylistBanner {
@@ -243,9 +320,8 @@ struct MenuBarView: View {
                     }
                     commitDownload()
                 } label: {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .font(.system(size: 30))
-                        .foregroundStyle(newURL.hasPrefix("http") ? accent : fgTer)
+                    Image(systemName: "arrow.down.circle")
+                        .font(.system(size: 30)).foregroundStyle(newURL.hasPrefix("http") ? accent : fgTer.opacity(0.7))
                 }
                 .buttonStyle(.plain)
                 .disabled(!newURL.hasPrefix("http"))
@@ -375,9 +451,10 @@ struct MenuBarView: View {
                         }
                     }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Audio only").font(.system(size: 12)).foregroundStyle(audioOnly ? fg : fgSec)
+                    Text("Audio only").font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(fg)
                     if audioOnly {
-                        Text("Saves as MP3").font(.system(size: 9.5)).foregroundStyle(fgTer)
+                        Text("Saves as MP3").font(.system(size: 9.5)).foregroundStyle(fgSec)
                     }
                 }
                 Spacer()
@@ -396,7 +473,7 @@ struct MenuBarView: View {
             if !videoFmts.isEmpty {
                 // VIDEO track picker
                 OptionRow(fg: fg) {
-                    Text("VIDEO").font(.system(size: 9, weight: .bold)).foregroundStyle(fgTer)
+                    Text("Video").font(.system(size: 9, weight: .semibold)).foregroundStyle(fgSec)
                         .frame(width: 38, alignment: .leading)
                     Menu {
                         Button { selectedVideoFmtId = "" } label: {
@@ -445,18 +522,19 @@ struct MenuBarView: View {
                             Image(systemName: "chevron.up.chevron.down").font(.system(size: 8))
                         }
                         .foregroundStyle(fg)
-                        .padding(.horizontal, 7).padding(.vertical, 4)
-                        .background(fg.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 5))
-                        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(rowBorder, lineWidth: 0.5))
+                            .padding(.horizontal, 7).padding(.vertical, 4)
+                            .background(isLightBg ? Color(white: 0.96) : fg.opacity(0.07))
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(rowBorder, lineWidth: 0.5))
+                        }
+                        .buttonStyle(.plain)
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(.plain)
-                    Spacer(minLength: 0)
-                }
 
-                // AUDIO track picker (hidden in audio-only mode)
+                    // AUDIO track picker (hidden in audio-only mode)
                 if selectedVideoFmtId != "audio" {
                     OptionRow(fg: fg) {
-                        Text("AUDIO").font(.system(size: 9, weight: .bold)).foregroundStyle(fgTer)
+                        Text("Audio").font(.system(size: 9, weight: .semibold)).foregroundStyle(fgSec)
                             .frame(width: 38, alignment: .leading)
                         Menu {
                             Button { selectedAudioFmtId = "" } label: {
@@ -489,7 +567,8 @@ struct MenuBarView: View {
                             }
                             .foregroundStyle(fg)
                             .padding(.horizontal, 7).padding(.vertical, 4)
-                            .background(fg.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 5))
+                            .background(isLightBg ? Color(white: 0.96) : fg.opacity(0.07))
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
                             .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(rowBorder, lineWidth: 0.5))
                         }
                         .buttonStyle(.plain)
@@ -499,7 +578,7 @@ struct MenuBarView: View {
             } else {
                 // Fallback: hardcoded picker while metadata loads or unsupported site
                 OptionRow(fg: fg) {
-                    Text("FORMAT").font(.system(size: 9, weight: .bold)).foregroundStyle(fgTer)
+                    Text("Format").font(.system(size: 9, weight: .semibold)).foregroundStyle(fgSec)
                     Picker("", selection: $format) {
                         ForEach(DownloadFormat.allCases) { fmt in Text(fmt.displayName).tag(fmt) }
                     }.labelsHidden().pickerStyle(.menu).accentColor(accent)
@@ -513,7 +592,8 @@ struct MenuBarView: View {
                     .font(.system(size: 11)).foregroundStyle(downloadSubs ? accent : fgSec)
                 Toggle("", isOn: $downloadSubs.animation()).labelsHidden().toggleStyle(SlimToggleStyle())
                 Text("Subtitles")
-                    .font(.system(size: 12)).foregroundStyle(downloadSubs ? fg : fgSec)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(fg)
                 if downloadSubs {
                     Spacer()
                     let langs = pendingJob?.meta?.availableSubLangs ?? []
@@ -538,7 +618,8 @@ struct MenuBarView: View {
                             }
                             .foregroundStyle(fg)
                             .padding(.horizontal, 7).padding(.vertical, 4)
-                            .background(fg.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 5))
+                            .background(isLightBg ? Color(white: 0.96) : fg.opacity(0.07))
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
                             .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(rowBorder, lineWidth: 0.5))
                         }
                         .buttonStyle(.plain)
@@ -548,7 +629,7 @@ struct MenuBarView: View {
                         }
                     } else {
                         Text(pendingJob?.metaState == .fetching ? "detecting…" : "paste URL first")
-                            .font(.system(size: 10)).foregroundStyle(fgTer)
+                            .font(.system(size: 10)).foregroundStyle(fgSec)
                     }
                 }
                 Spacer()
@@ -558,16 +639,16 @@ struct MenuBarView: View {
             OptionRow(fg: fg) {
                 Image(systemName: "scissors")
                     .font(.system(size: 11)).foregroundStyle(fgSec)
-                Text("Clip").font(.system(size: 12, weight: .medium)).foregroundStyle(fgSec)
+                Text("Clip").font(.system(size: 12, weight: .medium)).foregroundStyle(fg)
                 Spacer()
                 HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("START").font(.system(size: 7, weight: .bold)).foregroundStyle(fgTer)
+                        Text("Start").font(.system(size: 7, weight: .semibold)).foregroundStyle(fgSec)
                         MiniHMSInput(h: $startH, m: $startM, s: $startS, fg: fg)
                     }
                     Image(systemName: "arrow.right").font(.system(size: 8)).foregroundStyle(fgTer)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("END").font(.system(size: 7, weight: .bold)).foregroundStyle(fgTer)
+                        Text("End").font(.system(size: 7, weight: .semibold)).foregroundStyle(fgSec)
                         MiniHMSInput(h: $endH, m: $endM, s: $endS,
                                      placeholders: pendingJob?.videoDurationHMS, fg: fg)
                     }
@@ -581,33 +662,33 @@ struct MenuBarView: View {
                 Toggle("", isOn: $removeSponsor.animation()).labelsHidden().toggleStyle(SlimToggleStyle())
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Skip sponsors")
-                        .font(.system(size: 12)).foregroundStyle(removeSponsor ? fg : fgSec)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(fg)
                     Text("SponsorBlock integration")
-                        .font(.system(size: 9.5)).foregroundStyle(fgTer)
+                        .font(.system(size: 9.5)).foregroundStyle(fgSec)
                 }
                 Spacer()
                 if removeSponsor {
-                    Text("ON").font(.system(size: 9, weight: .bold))
+                    Text("On").font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(accent)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(accent.opacity(0.12)).clipShape(Capsule())
                 }
             }
 
-            // ── Save to ──────────────────────────────────────────────────
+            // ── Save to (bottom of options) ─────────────────────────────
             Divider().opacity(0.08).padding(.vertical, 2)
             OptionRow(fg: fg) {
                 Image(systemName: "folder.fill")
                     .font(.system(size: 11)).foregroundStyle(accent.opacity(0.8))
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("Save to").font(.system(size: 9, weight: .medium)).foregroundStyle(fgTer)
+                    Text("Save to").font(.system(size: 9, weight: .medium)).foregroundStyle(fgSec)
                     Text(queue.outputDirectory.lastPathComponent)
                         .font(.system(size: 12, weight: .medium)).foregroundStyle(fg)
                         .lineLimit(1)
                 }
                 Spacer()
                 HStack(spacing: 6) {
-                    // Category quick-switcher - only shown when categories are configured
                     let cats = settings.outputCategories.filter { !$0.path.isEmpty }
                     if !cats.isEmpty {
                         Menu {
@@ -625,9 +706,7 @@ struct MenuBarView: View {
                                 }
                             }
                             Divider()
-                            Button {
-                                openFolderPicker(queue: queue)
-                            } label: {
+                            Button { openFolderPicker(queue: queue) } label: {
                                 Label("Choose folder…", systemImage: "folder.badge.plus")
                             }
                         } label: {
@@ -639,14 +718,11 @@ struct MenuBarView: View {
                             }
                             .foregroundStyle(accent)
                             .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(accent.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                            .overlay(RoundedRectangle(cornerRadius: 6)
-                                .strokeBorder(accent.opacity(0.25), lineWidth: 0.5))
+                            .background(accent.opacity(0.10))
+                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     } else {
-                        // No categories configured - just a folder picker button
                         Button { openFolderPicker(queue: queue) } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "folder.badge.plus").font(.system(size: 10))
@@ -654,20 +730,24 @@ struct MenuBarView: View {
                             }
                             .foregroundStyle(accent)
                             .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(accent.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                            .overlay(RoundedRectangle(cornerRadius: 6)
-                                .strokeBorder(accent.opacity(0.25), lineWidth: 0.5))
+                            .background(accent.opacity(0.10))
+                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }
                 }
                 .help(queue.outputDirectory.path)
             }
+
+            // ── Jobs / recents ──────────────────────────────────────────
+            jobsSection
         }
-        .padding(.horizontal, 12).padding(.vertical, 10)
-        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: pendingJob?.metaState)
-    }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(fg.opacity(0.07)).frame(height: 0.5)
+            }
+            .animation(.spring(response: 0.25, dampingFraction: 0.85), value: pendingJob?.metaState)
+        }
 
     // MARK: - Playlist section
 
@@ -836,9 +916,9 @@ struct MenuBarView: View {
                     Image(systemName: "arrow.down.circle")
                         .font(.system(size: 28)).foregroundStyle(fgTer)
                     Text("No active downloads")
-                        .font(.system(size: 12, weight: .medium)).foregroundStyle(fgTer)
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(isDark ? fgSec : fg)
                     Text("Paste a URL above to get started")
-                        .font(.system(size: 10.5)).foregroundStyle(fg.opacity(0.16))
+                        .font(.system(size: 11)).foregroundStyle(fgSec)
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 20)
             } else {
@@ -858,8 +938,8 @@ struct MenuBarView: View {
                 Divider().opacity(0.08).padding(.horizontal, 12)
                 VStack(spacing: 0) {
                     HStack {
-                        Text("RECENT")
-                            .font(.system(size: 9, weight: .bold)).foregroundStyle(fgTer)
+                Text("Recent")
+                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(isDark ? fg.opacity(0.78) : fg)
                         Spacer()
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) { showRecents.toggle() }
@@ -890,74 +970,97 @@ struct MenuBarView: View {
 
     var footerSection: some View {
         VStack(spacing: 0) {
-            // Monitoring fully disabled banner - only visible when the toggle is off
             if !settings.clipboardMonitor {
                 HStack(spacing: 6) {
                     Image(systemName: "bell.slash.fill")
-                        .font(.system(size: 9)).foregroundStyle(.secondary)
+                        .font(.system(size: 9)).foregroundStyle(fgSec)
                     Text("Clipboard monitoring is off")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.system(size: 10)).foregroundStyle(fgSec)
                     Spacer()
                     Button("Turn on") {
                         settings.clipboardMonitor = true
                         Haptics.tap()
                     }
-                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(.blue)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(accent)
                     .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 12).padding(.vertical, 5)
-                .background(Color.primary.opacity(0.05))
-                Divider().foregroundStyle(fg.opacity(0.06))
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(fg.opacity(0.04))
             }
 
-            // Snooze status bar - only visible when snoozed
             if let snoozeLabel = ClipboardMonitor.shared.snoozeLabel {
                 HStack(spacing: 6) {
                     Image(systemName: "bell.slash.fill")
                         .font(.system(size: 9)).foregroundStyle(.orange)
                     Text(snoozeLabel)
-                        .font(.system(size: 10)).foregroundStyle(.orange.opacity(0.85))
+                        .font(.system(size: 10)).foregroundStyle(.orange.opacity(0.9))
                     Spacer()
                     Button("Clear") {
                         ClipboardMonitor.shared.clearSnooze()
                         Haptics.tap()
                     }
-                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(.orange)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.orange)
                     .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 12).padding(.vertical, 5)
+                .padding(.horizontal, 12).padding(.vertical, 6)
                 .background(Color.orange.opacity(0.10))
-                Divider().foregroundStyle(fg.opacity(0.06))
             }
 
             HStack(spacing: 8) {
                 if queue.jobs.contains(where: { $0.status.isTerminal }) {
                     Button { queue.clearCompleted(); Haptics.tap() } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark.circle").font(.system(size: 10))
-                            Text("Clear done").font(.system(size: 11, weight: .medium))
-                        }
-                        .foregroundStyle(fgSec)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(fg.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 6))
-                    }.buttonStyle(.plain)
+                        Label("Clear done", systemImage: "checkmark.circle")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(fgSec)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background { footerChipChrome }
+                    }
+                    .buttonStyle(.plain)
                 }
                 Spacer()
                 Text("\(activeJobs.count) item\(activeJobs.count == 1 ? "" : "s")")
-                    .font(.system(size: 10)).foregroundStyle(fgTer)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(isDark ? fgTer : fgSec)
                 Button { openMainWindow() } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "arrow.up.right.square").font(.system(size: 9))
-                        Text("Full app").font(.system(size: 10, weight: .medium))
-                    }
-                    .foregroundStyle(fgSec)
-                    .padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(fg.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                }.buttonStyle(.plain)
+                    Label("Full app", systemImage: "arrow.up.right.square")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(isDark ? fgSec : fg)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background { footerChipChrome }
+                }
+                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(fg.opacity(0.04))
+            .padding(.horizontal, 14).padding(.vertical, 9)
+            .background(fg.opacity(0.03))
+            .overlay(alignment: .top) {
+                Rectangle().fill(fg.opacity(0.07)).frame(height: 0.5)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var footerChipChrome: some View {
+        let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
+        if #available(macOS 26.0, *) {
+            shape
+                .fill(cardFill)
+                .overlay {
+                    shape.strokeBorder(cardBorder, lineWidth: 0.5)
+                }
+                .glassEffect(.regular.interactive(), in: shape)
+                .allowsHitTesting(false)
+        } else {
+            shape
+                .fill(cardFill)
+                .overlay {
+                    shape.strokeBorder(cardBorder, lineWidth: 0.5)
+                }
+                .shadow(color: isDark ? .clear : .black.opacity(0.06), radius: 1, y: 0.5)
+                .allowsHitTesting(false)
         }
     }
 
@@ -1024,7 +1127,7 @@ struct MenuBarView: View {
         if let existing = pendingJob, existing.url == url { return }
         let job = DownloadJob(); job.url = url; job.format = format
         pendingJob = job
-        DownloadService.shared.fetchMetadata(for: job)
+        DispatchQueue.main.async { DownloadService.shared.fetchMetadata(for: job) }
     }
 
     func clearAll() {
@@ -1302,7 +1405,17 @@ struct MiniHistoryRow: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(hovered ? fg.opacity(0.05) : Color.clear)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+            if #available(macOS 26.0, *) {
+                shape.fill(fg.opacity(hovered ? 0.07 : 0.03))
+                    .glassEffect(.regular.interactive(hovered), in: shape)
+                    .allowsHitTesting(false)
+            } else {
+                shape.fill(hovered ? fg.opacity(0.05) : Color.clear)
+                    .allowsHitTesting(false)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .onHover { hovered = $0 }
         .animation(.easeOut(duration: 0.1), value: hovered)
@@ -1314,13 +1427,45 @@ struct MiniHistoryRow: View {
 struct OptionRow<Content: View>: View {
     let fg: Color
     @ViewBuilder let content: Content
+    @State private var hovered = false
+
+    private var isLight: Bool {
+        NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) != .darkAqua
+    }
+    private var fill: Color {
+        if isLight { return hovered ? Color(white: 0.96) : .white }
+        return Color.white.opacity(hovered ? 0.11 : 0.07)
+    }
+    private var border: Color {
+        isLight ? Color.black.opacity(hovered ? 0.14 : 0.10)
+                : Color.white.opacity(hovered ? 0.16 : 0.12)
+    }
+
     var body: some View {
         HStack(spacing: 8) { content }
             .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(fg.opacity(0.05))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(fg.opacity(0.10), lineWidth: 0.5))
+            .background {
+                let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+                if #available(macOS 26.0, *) {
+                    shape
+                        .fill(fill)
+                        .overlay {
+                            shape.strokeBorder(border, lineWidth: 0.5)
+                        }
+                        .glassEffect(.regular.interactive(hovered), in: shape)
+                        .allowsHitTesting(false)
+                } else {
+                    shape
+                        .fill(fill)
+                        .overlay {
+                            shape.strokeBorder(border, lineWidth: 0.5)
+                        }
+                        .shadow(color: isLight ? .black.opacity(0.06) : .clear, radius: 2, y: 1)
+                        .allowsHitTesting(false)
+                }
+            }
+            .onHover { hovered = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovered)
     }
 }
 
@@ -1330,8 +1475,12 @@ struct DepDot: View {
     let label: String; let status: DepStatus; let fg: Color
     var body: some View {
         HStack(spacing: 3) {
-            Circle().fill(status.dotColor).frame(width: 6)
-            Text(label).font(.system(size: 9.5, weight: .medium)).foregroundStyle(fg.opacity(0.45))
+            Circle().fill(status.dotColor)
+                .frame(width: 6, height: 6)
+                .shadow(color: status.dotColor.opacity(0.55), radius: 2.5)
+            Text(label)
+                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(fg.opacity(0.78))
         }.help("\(label): \(status.statusLabel)")
     }
 }
@@ -1445,7 +1594,7 @@ struct MiniPlaylistRow: View {
                 VStack(alignment: .leading, spacing: 8) {
                     // Format
                     HStack(spacing: 8) {
-                        Text("FORMAT").font(.system(size: 8, weight: .bold)).foregroundStyle(fgTer)
+                        Text("Format").font(.system(size: 8, weight: .semibold)).foregroundStyle(fgSec)
                             .frame(width: 56, alignment: .leading)
                         Picker("", selection: $item.format) {
                             ForEach(DownloadFormat.allCases) { f in Text(f.displayName).tag(f) }
@@ -1454,16 +1603,16 @@ struct MiniPlaylistRow: View {
                     }
                     // Clip times
                     HStack(spacing: 8) {
-                        Text("CLIP").font(.system(size: 8, weight: .bold)).foregroundStyle(fgTer)
+                        Text("Clip").font(.system(size: 8, weight: .semibold)).foregroundStyle(fgSec)
                             .frame(width: 56, alignment: .leading)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("START").font(.system(size: 7, weight: .bold)).foregroundStyle(fgTer)
+                            Text("Start").font(.system(size: 7, weight: .semibold)).foregroundStyle(fgSec)
                             MiniHMSInput(h: $item.startH, m: $item.startM, s: $item.startS, fg: fg)
                         }
                         Image(systemName: "arrow.right").font(.system(size: 8)).foregroundStyle(fgTer)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 3) {
-                                Text("END").font(.system(size: 7, weight: .bold)).foregroundStyle(fgTer)
+                                Text("End").font(.system(size: 7, weight: .semibold)).foregroundStyle(fgSec)
                                 if !item.duration.isEmpty {
                                     Text("/ \(item.duration)").font(.system(size: 7, design: .monospaced)).foregroundStyle(fgTer)
                                 }
@@ -1474,7 +1623,7 @@ struct MiniPlaylistRow: View {
                     }
                     // SponsorBlock
                     HStack(spacing: 8) {
-                        Text("SPONSOR").font(.system(size: 8, weight: .bold)).foregroundStyle(fgTer)
+                        Text("Sponsor").font(.system(size: 8, weight: .semibold)).foregroundStyle(fgSec)
                             .frame(width: 56, alignment: .leading)
                         Toggle("", isOn: $item.sponsorBlock.animation()).labelsHidden()
                             .toggleStyle(SlimToggleStyle()).accentColor(accent)
@@ -1488,7 +1637,7 @@ struct MiniPlaylistRow: View {
                         VStack(alignment: .leading, spacing: 5) {
                             // Mode toggle
                             HStack(spacing: 8) {
-                                Text("CHAPTER").font(.system(size: 8, weight: .bold)).foregroundStyle(fgTer)
+                                Text("Chapter").font(.system(size: 8, weight: .semibold)).foregroundStyle(fgSec)
                                     .frame(width: 56, alignment: .leading)
                                 HStack(spacing: 0) {
                                     ForEach([("scissors", "Start/End", DownloadJob.SegmentMode.manual),
@@ -1609,7 +1758,7 @@ struct MiniPlaylistRow: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 7))
-        .onHover { h in hovered = h; if h { Haptics.hover() } }
+
         .animation(.easeOut(duration: 0.1), value: hovered)
     }
 }
@@ -1934,17 +2083,25 @@ struct MiniTimeBox: View {
     @Binding var text: String; let placeholder: String; let maxVal: Int
     var fg: Color = .primary
     @FocusState private var focused: Bool
+    private var isLight: Bool {
+        NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) != .darkAqua
+    }
     var body: some View {
-        TextField(placeholder, text: $text)
+        TextField("", text: $text, prompt: Text(placeholder)
+            .foregroundColor(fg.opacity(isLight ? 0.40 : 0.45)))
             .textFieldStyle(.plain)
             .font(.system(size: 11, weight: .semibold, design: .monospaced))
             .foregroundStyle(fg)
             .multilineTextAlignment(.center)
             .frame(width: 26, height: 22)
-            .background(focused ? Color.accentColor.opacity(0.12) : fg.opacity(0.07))
+            .background(focused
+                ? Color.accentColor.opacity(0.12)
+                : (isLight ? Color(white: 0.96) : fg.opacity(0.07)))
             .clipShape(RoundedRectangle(cornerRadius: 5))
             .overlay(RoundedRectangle(cornerRadius: 5)
-                .strokeBorder(focused ? Color.accentColor.opacity(0.5) : fg.opacity(0.18), lineWidth: 0.5))
+                .strokeBorder(focused ? Color.accentColor.opacity(0.5)
+                                      : (isLight ? Color.black.opacity(0.14) : fg.opacity(0.18)),
+                              lineWidth: 0.5))
             .focused($focused)
             .onChange(of: text) { v in
                 let d = String(v.filter(\.isNumber).prefix(2))

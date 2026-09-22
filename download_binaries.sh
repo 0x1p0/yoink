@@ -1,138 +1,126 @@
 #!/bin/bash
-set -e
+# Fetch native/universal macOS binaries for Yoink.
+#   - yt-dlp : official universal2 binary (yt-dlp_macos) — no Python runtime needed
+#   - ffmpeg/ffprobe : fat (universal) binaries lipo'd from martin-riedl.de arm64 + amd64
+# Evermeet.cx is intentionally NOT used: it only ships x86_64 and forces Rosetta on Apple Silicon.
+set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="$SCRIPT_DIR/Yoink/Resources/bin"
 mkdir -p "$BIN_DIR"
 
-# ── Resolve latest Python version from python-build-standalone ────────────────
+ARCH="$(uname -m)"
+FFMPEG_MIRROR="https://ffmpeg.martin-riedl.de"
+TMP_ROOT="$(mktemp -d)"
+trap 'rm -rf "$TMP_ROOT"' EXIT
 
-ARCH=$(uname -m)
+log()  { printf '\033[1m✓\033[0m %s\n' "$*"; }
+info() { printf '   %s\n' "$*"; }
+die()  { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
-echo "🔍 Fetching latest python-build-standalone release..."
+fetch_zip_tool() {
+  # $1 = arch (arm64|amd64)  $2 = tool name (ffmpeg|ffprobe)  $3 = dest dir
+  local arch="$1" tool="$2" dest="$3"
+  local url="$FFMPEG_MIRROR/redirect/latest/macos/${arch}/release/${tool}.zip"
+  local zip="$TMP_ROOT/${tool}-${arch}.zip"
+  mkdir -p "$dest"
 
-# Get the latest release info from GitHub API
-RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/indygreg/python-build-standalone/releases/latest")
+  info "Downloading ${tool} (${arch})…"
+  if ! curl -fsSL --retry 3 --retry-delay 1 -o "$zip" "$url"; then
+    # Fall back to snapshot builds if a release slot is missing for this arch
+    url="$FFMPEG_MIRROR/redirect/latest/macos/${arch}/snapshot/${tool}.zip"
+    info "Release missing — trying snapshot: $url"
+    curl -fsSL --retry 3 --retry-delay 1 -o "$zip" "$url" \
+      || die "Could not download ${tool} for ${arch}"
+  fi
 
-# Extract the release tag (e.g. "20250101")
-RELEASE_TAG=$(echo "$RELEASE_JSON" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-print(data['tag_name'])
-")
+  # Zips from this mirror contain a bare binary at the root
+  unzip -oq "$zip" -d "$dest" "$tool" 2>/dev/null \
+    || unzip -oq "$zip" -d "$dest"
+  # Some zips nest the binary — search one level if needed
+  if [ ! -f "$dest/$tool" ]; then
+    local found
+    found="$(find "$dest" -maxdepth 3 -type f -name "$tool" | head -1)"
+    [ -n "$found" ] || die "Extracted zip for ${tool} (${arch}) has no ${tool} binary"
+    mv "$found" "$dest/$tool"
+  fi
+  chmod +x "$dest/$tool"
+}
 
-# Find the correct asset URL for this arch
-if [ "$ARCH" = "arm64" ]; then
-    ASSET_PATTERN="aarch64-apple-darwin-install_only.tar.gz"
-else
-    ASSET_PATTERN="x86_64-apple-darwin-install_only.tar.gz"
-fi
+install_universal_tool() {
+  # $1 = tool name. Builds a fat binary when both arch slices are available.
+  local tool="$1"
+  local arm_dir="$TMP_ROOT/arm64-$tool"
+  local intel_dir="$TMP_ROOT/amd64-$tool"
+  local out="$BIN_DIR/$tool"
 
-PYTHON_URL=$(echo "$RELEASE_JSON" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-pattern = sys.argv[1]
-assets = [a['browser_download_url'] for a in data['assets']
-          if pattern in a['name'] and 'cpython-' in a['name']]
-# Prefer the highest Python version in this release
-assets.sort(reverse=True)
-print(assets[0] if assets else '')
-" "$ASSET_PATTERN")
+  fetch_zip_tool arm64  "$tool" "$arm_dir"
+  fetch_zip_tool amd64  "$tool" "$intel_dir"
 
-if [ -z "$PYTHON_URL" ]; then
-    echo "❌ Could not find a matching Python asset for $ARCH in release $RELEASE_TAG"
-    exit 1
-fi
+  if command -v lipo >/dev/null 2>&1; then
+    info "Creating universal ${tool} (arm64 + x86_64)…"
+    rm -f "$out"
+    lipo -create "$arm_dir/$tool" "$intel_dir/$tool" -output "$out"
+    chmod +x "$out"
+    local archs
+    archs="$(lipo -archs "$out" 2>/dev/null || true)"
+    log "${tool} → universal (${archs:-unknown})"
+  else
+    # No lipo (rare) — prefer the host architecture
+    if [ "$ARCH" = "arm64" ]; then
+      cp "$arm_dir/$tool" "$out"
+    else
+      cp "$intel_dir/$tool" "$out"
+    fi
+    chmod +x "$out"
+    log "${tool} → $ARCH only (lipo not found)"
+  fi
 
-# Extract Python version from the URL filename (e.g. cpython-3.13.2+...)
-PYTHON_VERSION=$(basename "$PYTHON_URL" | sed -E 's/cpython-([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+  # Sanity: must be a Mach-O that can at least print a version
+  if ! "$out" -version >/dev/null 2>&1 && ! "$out" -h >/dev/null 2>&1; then
+    die "${tool} downloaded but failed to execute — wrong architecture?"
+  fi
+}
 
-echo "✓ Latest release : $RELEASE_TAG"
-echo "✓ Python version : $PYTHON_VERSION"
-echo "✓ Asset URL      : $PYTHON_URL"
-
-# ── Download and extract Python ───────────────────────────────────────────────
-
-PYTHON_DIR="$BIN_DIR/python"
+# ── yt-dlp (official universal2 standalone — replaces the old Python + pip setup) ──
 
 echo ""
-echo "📦 Downloading standalone Python ${PYTHON_VERSION} for ${ARCH}..."
-TMP_TAR="$(mktemp -d)/python.tar.gz"
-curl -fL --progress-bar -o "$TMP_TAR" "$PYTHON_URL"
-
-echo "📦 Extracting Python..."
-rm -rf "$PYTHON_DIR"
-mkdir -p "$PYTHON_DIR"
-tar -xzf "$TMP_TAR" -C "$PYTHON_DIR" --strip-components=1
-rm -f "$TMP_TAR"
-
-echo "✓ Python extracted: $("$PYTHON_DIR/bin/python3" --version)"
-
-echo "📦 Installing yt-dlp into standalone Python..."
-"$PYTHON_DIR/bin/pip3" install --quiet yt-dlp
-
-echo "✓ yt-dlp installed: $("$PYTHON_DIR/bin/python3" -m yt_dlp --version)"
-
-# Launcher script
-cat > "$BIN_DIR/yt-dlp" << 'LAUNCHER'
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$SCRIPT_DIR/python/bin/python3" -m yt_dlp "$@"
-LAUNCHER
-
+echo "📦 Fetching yt-dlp (universal macOS binary)…"
+curl -fsSL --retry 3 --retry-delay 1 \
+  -o "$BIN_DIR/yt-dlp" \
+  "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"
 chmod +x "$BIN_DIR/yt-dlp"
-echo "✓ yt-dlp launcher written"
+# Gatekeeper quarantine breaks freshly downloaded Mach-O binaries inside DMG installs
+xattr -d com.apple.quarantine "$BIN_DIR/yt-dlp" 2>/dev/null || true
 
-# ── ffmpeg ───────────────────────────────────────────────────────────────────
+YT_VER="$("$BIN_DIR/yt-dlp" --version 2>/dev/null | head -1 || true)"
+[ -n "$YT_VER" ] || die "yt-dlp downloaded but failed to run"
+log "yt-dlp ${YT_VER} (universal)"
+
+# ── ffmpeg / ffprobe (universal) ──
 
 echo ""
-echo "📦 Downloading ffmpeg..."
+echo "📦 Fetching ffmpeg + ffprobe…"
+install_universal_tool ffmpeg
+install_universal_tool ffprobe
 
-FFMPEG_URL="https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip"
-FFPROBE_URL="https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip"
+# ── Stale artifacts from the old Python-based pipeline ──
 
-# ---- ffmpeg ----
-TMP_ZIP="$(mktemp -d)/ffmpeg.zip"
-curl -fJL --progress-bar -o "$TMP_ZIP" "$FFMPEG_URL"
-
-if ! file "$TMP_ZIP" | grep -q "Zip archive"; then
-    echo "❌ ffmpeg download failed (not a zip)"
-    exit 1
+if [ -d "$BIN_DIR/python" ]; then
+  info "Removing legacy bundled Python runtime…"
+  rm -rf "$BIN_DIR/python"
 fi
-
-unzip -o "$TMP_ZIP" -d "$BIN_DIR" ffmpeg
-chmod +x "$BIN_DIR/ffmpeg"
-rm -f "$TMP_ZIP"
-
-echo "✓ ffmpeg downloaded: $("$BIN_DIR/ffmpeg" -version 2>&1 | head -1 | awk '{print $3}')"
-
-# ---- ffprobe ----
-echo "📦 Downloading ffprobe..."
-TMP_ZIP2="$(mktemp -d)/ffprobe.zip"
-curl -fJL --progress-bar -o "$TMP_ZIP2" "$FFPROBE_URL"
-
-if ! file "$TMP_ZIP2" | grep -q "Zip archive"; then
-    echo "❌ ffprobe download failed (not a zip)"
-    exit 1
-fi
-
-unzip -o "$TMP_ZIP2" -d "$BIN_DIR" ffprobe
-chmod +x "$BIN_DIR/ffprobe"
-rm -f "$TMP_ZIP2"
-
-echo "✓ ffprobe downloaded: $("$BIN_DIR/ffprobe" -version 2>&1 | head -1 | awk '{print $3}')"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 
 echo ""
-echo "✅ Done! Bundle sizes:"
-du -sh "$BIN_DIR/python" "$BIN_DIR/ffmpeg" "$BIN_DIR/ffprobe" "$BIN_DIR/yt-dlp"
+log "Bundle ready:"
+du -sh "$BIN_DIR/yt-dlp" "$BIN_DIR/ffmpeg" "$BIN_DIR/ffprobe" | sed 's/^/   /'
 
 echo ""
-echo "⚠️  IMPORTANT — Xcode setup:"
-echo "   1. In Xcode, select the 'python' folder under Resources/bin/"
-echo "   2. Delete reference (don't move to trash) and re-add it"
-echo "   3. Choose 'Create folder references' (blue folder)"
-echo "   4. Ensure target membership is enabled"
+echo "   Host arch : $ARCH"
+echo "   ffmpeg    : $("$BIN_DIR/ffmpeg" -version 2>/dev/null | head -1)"
+echo "   ffprobe   : $("$BIN_DIR/ffprobe" -version 2>/dev/null | head -1)"
 echo ""
-echo "   The python/ folder MUST be a blue folder (folder reference)"
-echo "   or Xcode will try to compile Python files and fail."
+echo "⚠️  Xcode: ensure Resources/bin stays a blue folder reference"
+echo "   (folder references copy binary contents as-is; yellow groups do not)."

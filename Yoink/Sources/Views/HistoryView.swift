@@ -131,10 +131,25 @@ struct HistoryView: View {
                     }
                 }
                 .padding(.horizontal, 10).padding(.vertical, 7)
-                .background(Color.primary.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
+                .background {
+                    let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    if #available(macOS 26.0, *) {
+                        shape
+                            .fill(Color.primary.opacity(0.05))
+                            .overlay {
+                                shape.strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5)
+                            }
+                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                            .allowsHitTesting(false)
+                    } else {
+                        shape
+                            .fill(Color.primary.opacity(0.06))
+                            .overlay {
+                                shape.strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5)
+                            }
+                            .allowsHitTesting(false)
+                    }
+                }
 
                 Text("\(filtered.count) item\(filtered.count == 1 ? "" : "s")")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -419,12 +434,21 @@ struct HistoryRow: View {
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+            shape
                 .fill(isMissing
-                    ? Color.orange.opacity(hovered ? 0.07 : 0.04)
-                    : Color.primary.opacity(hovered ? 0.05 : 0))
-        )
+                      ? Color.orange.opacity(hovered ? 0.07 : 0.04)
+                      : Color.primary.opacity(hovered ? 0.05 : 0))
+                .overlay {
+                    shape.strokeBorder(
+                        isMissing
+                            ? Color.orange.opacity(hovered ? 0.25 : 0.12)
+                            : Color.clear,
+                        lineWidth: 0.5
+                    )
+                }
+        }
         .onHover { hovered = $0 }
         .animation(.easeOut(duration: 0.12), value: hovered)
     }
@@ -444,13 +468,40 @@ struct FilterPill: View {
                 .font(.system(size: 11, weight: selected ? .semibold : .regular))
                 .foregroundStyle(selected ? Color.accentColor : Color.secondary)
                 .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(
-                    Capsule().fill(selected
-                        ? Color.accentColor.opacity(0.12)
-                        : Color.primary.opacity(hovered ? 0.07 : 0.05))
-                )
-                .overlay(Capsule().strokeBorder(
-                    selected ? Color.accentColor.opacity(0.35) : Color.clear, lineWidth: 0.5))
+                .background {
+                    let shape = Capsule(style: .circular)
+                    if #available(macOS 26.0, *) {
+                        shape
+                            .fill(selected
+                                  ? Color.accentColor.opacity(0.12)
+                                  : Color.primary.opacity(hovered ? 0.07 : 0.05))
+                            .overlay {
+                                shape.strokeBorder(
+                                    selected ? Color.accentColor.opacity(0.35) : Color.clear,
+                                    lineWidth: 0.5
+                                )
+                            }
+                            .glassEffect(
+                                selected || hovered
+                                    ? (selected ? .regular.interactive() : .regular)
+                                    : .regular,
+                                in: Capsule(style: .circular)
+                            )
+                            .allowsHitTesting(false)
+                    } else {
+                        shape
+                            .fill(selected
+                                  ? Color.accentColor.opacity(0.12)
+                                  : Color.primary.opacity(hovered ? 0.07 : 0.05))
+                            .overlay {
+                                shape.strokeBorder(
+                                    selected ? Color.accentColor.opacity(0.35) : Color.clear,
+                                    lineWidth: 0.5
+                                )
+                            }
+                            .allowsHitTesting(false)
+                    }
+                }
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }

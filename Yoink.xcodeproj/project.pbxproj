@@ -10,7 +10,7 @@
 		AA000001 /* YoinkApp.swift in Sources */              = {isa = PBXBuildFile; fileRef = AA100001; };
 		AA000002 /* ContentView.swift in Sources */           = {isa = PBXBuildFile; fileRef = AA100002; };
 		AA000003 /* JobCard.swift in Sources */               = {isa = PBXBuildFile; fileRef = AA100003; };
-		AA000004 /* Services.swift in Sources */              = {isa = PBXBuildFile; fileRef = AA100004; };
+		AA000004 /* DependencyService.swift in Sources */     = {isa = PBXBuildFile; fileRef = AA100004; };
 		AA000005 /* DownloadJob.swift in Sources */           = {isa = PBXBuildFile; fileRef = AA100005; };
 		AA000006 /* SettingsManager.swift in Sources */       = {isa = PBXBuildFile; fileRef = AA100006; };
 		AA000007 /* Assets.xcassets in Resources */           = {isa = PBXBuildFile; fileRef = AA100007; };
@@ -28,13 +28,20 @@
 		AA000021 /* WatchLaterView.swift in Sources */        = {isa = PBXBuildFile; fileRef = AA100021; };
 		AA000022 /* TutorialView.swift in Sources */          = {isa = PBXBuildFile; fileRef = AA100022; };
 		AA000030 /* ScheduledDownloadStore.swift in Sources */= {isa = PBXBuildFile; fileRef = AA100030; };
+		AA000031 /* MediaTools.swift in Sources */            = {isa = PBXBuildFile; fileRef = AA100031; };
+		AA000032 /* HistoryStore.swift in Sources */          = {isa = PBXBuildFile; fileRef = AA100032; };
+		AA000033 /* PostDownloadActions.swift in Sources */   = {isa = PBXBuildFile; fileRef = AA100033; };
+		AA000034 /* DownloadQueue.swift in Sources */         = {isa = PBXBuildFile; fileRef = AA100034; };
+		AA000035 /* DownloadService.swift in Sources */       = {isa = PBXBuildFile; fileRef = AA100035; };
+		AA000036 /* ThumbnailCache.swift in Sources */        = {isa = PBXBuildFile; fileRef = AA100036; };
+		AA000037 /* AppUpdateService.swift in Sources */      = {isa = PBXBuildFile; fileRef = AA100037; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		AA100001 /* YoinkApp.swift */             = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = YoinkApp.swift;             sourceTree = "<group>"; };
 		AA100002 /* ContentView.swift */          = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = ContentView.swift;          sourceTree = "<group>"; };
 		AA100003 /* JobCard.swift */              = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = JobCard.swift;              sourceTree = "<group>"; };
-		AA100004 /* Services.swift */             = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = Services.swift;             sourceTree = "<group>"; };
+		AA100004 /* DependencyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = DependencyService.swift; sourceTree = "<group>"; };
 		AA100005 /* DownloadJob.swift */          = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = DownloadJob.swift;          sourceTree = "<group>"; };
 		AA100006 /* SettingsManager.swift */      = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = SettingsManager.swift;      sourceTree = "<group>"; };
 		AA100007 /* Assets.xcassets */            = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog;       path = Assets.xcassets;            sourceTree = "<group>"; };
@@ -53,6 +60,13 @@
 		AA100021 /* WatchLaterView.swift */       = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = WatchLaterView.swift;       sourceTree = "<group>"; };
 		AA100022 /* TutorialView.swift */         = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = TutorialView.swift;         sourceTree = "<group>"; };
 		AA100030 /* ScheduledDownloadStore.swift */= {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;         path = ScheduledDownloadStore.swift; sourceTree = "<group>"; };
+		AA100031 /* MediaTools.swift */          = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = MediaTools.swift;          sourceTree = "<group>"; };
+		AA100032 /* HistoryStore.swift */        = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = HistoryStore.swift;        sourceTree = "<group>"; };
+		AA100033 /* PostDownloadActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = PostDownloadActions.swift; sourceTree = "<group>"; };
+		AA100034 /* DownloadQueue.swift */       = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = DownloadQueue.swift;       sourceTree = "<group>"; };
+		AA100035 /* DownloadService.swift */     = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = DownloadService.swift;     sourceTree = "<group>"; };
+		AA100036 /* ThumbnailCache.swift */      = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = ThumbnailCache.swift;      sourceTree = "<group>"; };
+		AA100037 /* AppUpdateService.swift */    = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = AppUpdateService.swift;    sourceTree = "<group>"; };
 		AA200001 /* Yoink.app */                  = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Yoink.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -88,7 +102,20 @@
 		};
 		AA300007 /* Services */ = {
 			isa = PBXGroup;
-			children = (AA100004, AA100020, AA100017, AA100018, AA100030);
+			children = (
+				AA100004,
+				AA100031,
+				AA100032,
+				AA100033,
+				AA100034,
+				AA100035,
+				AA100036,
+				AA100037,
+				AA100020,
+				AA100017,
+				AA100018,
+				AA100030,
+			);
 			path = Services;
 			sourceTree = "<group>";
 		};
@@ -183,7 +210,14 @@
 				AA000001 /* YoinkApp.swift in Sources */,
 				AA000002 /* ContentView.swift in Sources */,
 				AA000003 /* JobCard.swift in Sources */,
-				AA000004 /* Services.swift in Sources */,
+				AA000004 /* DependencyService.swift in Sources */,
+				AA000031 /* MediaTools.swift in Sources */,
+				AA000032 /* HistoryStore.swift in Sources */,
+				AA000033 /* PostDownloadActions.swift in Sources */,
+				AA000034 /* DownloadQueue.swift in Sources */,
+				AA000035 /* DownloadService.swift in Sources */,
+				AA000036 /* ThumbnailCache.swift in Sources */,
+				AA000037 /* AppUpdateService.swift in Sources */,
 				AA000020 /* TwitchService.swift in Sources */,
 				AA000005 /* DownloadJob.swift in Sources */,
 				AA000006 /* SettingsManager.swift in Sources */,

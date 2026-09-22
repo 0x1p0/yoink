@@ -276,7 +276,7 @@ final class SettingsManager: ObservableObject {
     @AppStorage("useBlurBackground")   var useBlurBackground:  Bool   = true
 
     // Haptics
-    @AppStorage("hapticsEnabled")       var hapticsEnabled:      Bool   = true
+    @AppStorage("hapticsEnabled")       var hapticsEnabled:      Bool   = false
     @AppStorage("hapticIntensity")      var hapticIntensityRaw:  String = "medium"
 
     // Appearance

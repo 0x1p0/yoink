@@ -20,18 +20,28 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            if settings.useBlurBackground {
-                VisualEffectBlur(material: theme.blurMaterial).ignoresSafeArea()
-            } else {
-                ZStack {
-                    theme.windowBackground.ignoresSafeArea()
-                    theme.backgroundGradient.ignoresSafeArea()
+            // Rich window bed — material + subtle depth so glass chrome has something to refract
+            ZStack {
+                if settings.useBlurBackground {
+                    VisualEffectBlur(material: theme.blurMaterial)
+                } else {
+                    theme.windowBackground
                 }
+                // Soft vignette / gradient for dimension
+                LinearGradient(
+                    colors: [
+                        Color.primary.opacity(0.03),
+                        Color.clear,
+                        Color.black.opacity(0.04)
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                )
             }
+            .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                WindowHeader()
-                Divider().opacity(0.08)
+                // Clear space so floating header doesn't collide with content
+                Color.clear.frame(height: 62)
 
                 if settings.appMode == .video {
                     SimpleDownloadView()
@@ -47,10 +57,17 @@ struct ContentView: View {
                     HistoryView().environmentObject(theme)
                 }
             }
-            // Clipboard banner floats over content - doesn't push layout
+            // Floating Liquid Glass header
+            .overlay(alignment: .top) {
+                WindowHeader()
+                    .padding(.horizontal, 14)
+                    .padding(.top, 10)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            // Clipboard banner floats below header
             .overlay(alignment: .top) {
                 ClipboardBanner()
-                    .padding(.top, 52) // clears the header
+                    .padding(.top, 70)
                     .animation(.spring(response: 0.35, dampingFraction: 0.82), value: clipMonitor.showBanner)
             }
         }
@@ -68,6 +85,8 @@ struct ContentView: View {
         }
 
         .onDrop(of: [.url, .text], isTargeted: nil) { providers in handleDrop(providers) }
+        // Tag this window so AppDelegate only makes the main window transparent
+        .background(MainWindowTagger())
         // ⌘V: paste clipboard URL into the next empty card (without auto-pasting on every focus)
         .onReceive(NotificationCenter.default.publisher(for: .pasteAndFocus)) { _ in
             pasteClipboardURL()
@@ -199,6 +218,24 @@ struct VisualEffectBlur: NSViewRepresentable {
     }
 }
 
+// Marks the main content window so AppDelegate never clears Settings/panels
+private struct MainWindowTagger: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        DispatchQueue.main.async {
+            v.window?.identifier = YoinkWindowID.main
+            v.window?.isOpaque = false
+            v.window?.backgroundColor = .clear
+        }
+        return v
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            nsView.window?.identifier = YoinkWindowID.main
+        }
+    }
+}
+
 // MARK: - Simple / Video mode
 
 struct SimpleDownloadView: View {
@@ -213,9 +250,8 @@ struct SimpleDownloadView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Divider().opacity(0.06)
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 9) {
+                LazyVStack(spacing: 12) {
                     ForEach(queue.jobs) { job in
                         JobCard(job: job, onPlaylistDetected: { handlePlaylist(job: job) })
                             .transition(.asymmetric(
@@ -223,13 +259,19 @@ struct SimpleDownloadView: View {
                                 removal:   .push(from: .bottom).combined(with: .opacity)))
                     }
                     .onMove { queue.move(from: $0, to: $1) }
-                    AddURLButton().padding(.top, 4)
+                    AddURLButton().padding(.top, 2)
                 }
-                .padding(20).padding(.bottom, 68)
+                .padding(.horizontal, 22)
+                .padding(.top, 8)
+                .padding(.bottom, 96)
                 .animation(.spring(response: 0.3, dampingFraction: 0.78), value: queue.jobs.map(\.id))
             }
-            Divider().opacity(0.08)
+        }
+        // Floating bottom toolbar over content
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             BottomToolbar()
+                .padding(.horizontal, 16)
+                .padding(.bottom, 14)
         }
         .onReceive(NotificationCenter.default.publisher(for: .playlistURLDetected)) { notif in
             if let job = notif.object as? DownloadJob { handlePlaylist(job: job) }
@@ -272,124 +314,104 @@ struct SimpleDownloadView: View {
     }
 }
 
-// MARK: - Window Header
+// MARK: - Window Header (floating Liquid Glass)
 
 struct WindowHeader: View {
     @EnvironmentObject var settings: SettingsManager
     @EnvironmentObject var theme: ThemeManager
+    @State private var hoverGear = false
+    @State private var hoverSrc  = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Mode toggle - left-aligned, no fixed width so 4 tabs fit
+        HStack(spacing: 12) {
             ModeToggle()
-                .padding(.leading, 16)
+                .fixedSize()
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            // Centered title
-            VStack(spacing: 1) {
+            VStack(spacing: 0) {
                 Text("Yoink")
-                    .font(.system(size: 20, weight: .heavy, design: .serif))
-                    .foregroundStyle(.primary.opacity(0.9))
-                    .tracking(1.2)
-                Text("yt-dlp  ·  ffmpeg")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.secondary.opacity(0.4))
-                    .tracking(2.2)
+                    .font(.system(size: 17, weight: .heavy, design: .serif))
+                    .foregroundStyle(.primary.opacity(0.92))
+                    .tracking(0.6)
             }
-            .frame(maxHeight: .infinity)
+            .frame(maxWidth: .infinity)
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            // Right side - settings gear + theme + blur quick toggles
-            HStack(spacing: 6) {
-                // Settings gear - always visible in header across all tabs
+            HStack(spacing: 4) {
                 if #available(macOS 14.0, *) {
                     SettingsLink {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.secondary)
-                            .frame(width: 28, height: 28)
-                            .background(Color.primary.opacity(0.05))
-                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
+                        headerIcon("gearshape", hovered: hoverGear)
                     }
                     .buttonStyle(.plain)
-                    .hoverHaptic()
+                    .onHover { hoverGear = $0 }
                     .help("Settings  ⌘,")
                 } else {
                     Button {
                         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                     } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.secondary)
-                            .frame(width: 28, height: 28)
-                            .background(Color.primary.opacity(0.05))
-                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
+                        headerIcon("gearshape", hovered: hoverGear)
                     }
                     .buttonStyle(.plain)
-                    .hoverHaptic()
+                    .onHover { hoverGear = $0 }
                     .help("Settings  ⌘,")
                     .keyboardShortcut(",", modifiers: .command)
                 }
 
-                // Blur quick-toggle - tap to toggle, clearly labelled
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        settings.useBlurBackground.toggle()
-                    }
-                    Haptics.tap()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: settings.useBlurBackground ? "sparkles" : "square.fill")
-                            .font(.system(size: 10, weight: .semibold))
-                        Text(settings.useBlurBackground ? "Blur" : "Solid")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .foregroundStyle(settings.useBlurBackground ? Color.accentColor : Color.secondary)
-                    .padding(.horizontal, 8).padding(.vertical, 5)
-                    .background(settings.useBlurBackground
-                                ? Color.accentColor.opacity(0.1)
-                                : Color.primary.opacity(0.05))
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(
-                            settings.useBlurBackground
-                            ? Color.accentColor.opacity(0.2)
-                            : Color(.separatorColor).opacity(0.5),
-                            lineWidth: 0.5))
-                }
-                .buttonStyle(.plain)
-                .hoverHaptic()
-                .help("Toggle frosted glass background")
-
-                // GitHub link - always visible
                 Button {
                     NSWorkspace.shared.open(URL(string: "https://github.com/0x1p0/yoink")!)
                 } label: {
-                    Image(systemName: "chevron.left.forwardslash.chevron.right")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.secondary)
-                        .frame(width: 28, height: 28)
-                        .background(Color.primary.opacity(0.05))
-                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
+                    headerIcon("chevron.left.forwardslash.chevron.right", hovered: hoverSrc, size: 11)
                 }
                 .buttonStyle(.plain)
-                .hoverHaptic()
+                .onHover { hoverSrc = $0 }
                 .help("View source on GitHub")
-
-                ThemePicker()
             }
-            .padding(.trailing, 16)
         }
-        .frame(height: 44)
-        .background(.ultraThinMaterial)
+        .padding(.horizontal, 8)
+        .frame(height: 48)
+        .background(.ultraThinMaterial, in: Capsule(style: .circular))
+        .overlay {
+            Capsule(style: .circular)
+                .strokeBorder(
+                    Color.white.opacity(
+                        NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                            ? 0.12 : 0.18
+                    ),
+                    lineWidth: 0.5
+                )
+                .allowsHitTesting(false)
+        }
+        .clipShape(Capsule(style: .circular))
+        .modifier(GlassChromeModifier(cornerRadius: 0, interactive: true, shape: Capsule(style: .circular)))
+    }
+
+    @ViewBuilder
+    private func headerIcon(_ name: String, hovered: Bool, size: CGFloat = 12) -> some View {
+        Image(systemName: name)
+            .font(.system(size: size, weight: .medium))
+            .foregroundStyle(hovered ? Color.primary.opacity(0.85) : Color.secondary)
+            .frame(width: 30, height: 30)
+            .background(
+                Circle().fill(hovered ? Color.primary.opacity(0.07) : Color.clear)
+            )
+            .contentShape(Circle())
+    }
+}
+
+/// Applies Liquid Glass to a view (not just its background) on macOS 26+.
+struct GlassChromeModifier<S: Shape>: ViewModifier {
+    var cornerRadius: CGFloat
+    var interactive: Bool
+    var shape: S
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content
+                .glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+        } else {
+            content
+        }
     }
 }
 
@@ -397,36 +419,21 @@ struct ModeToggle: View {
     @EnvironmentObject var settings: SettingsManager
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(AppMode.allCases) { mode in
-                Button {
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
-                        settings.appModeRaw = mode.rawValue
-                    }
-                    Haptics.tap()
-                } label: {
-                    Text(mode.shortLabel)
-                        .font(.system(size: 11.5,
-                                      weight: settings.appMode == mode ? .semibold : .regular))
-                        .foregroundStyle(settings.appMode == mode
-                                         ? Color.primary
-                                         : Color.secondary.opacity(0.7))
-                        .padding(.horizontal, 11).padding(.vertical, 5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(settings.appMode == mode
-                                      ? Color(.controlBackgroundColor).opacity(0.9)
-                                      : Color.clear)
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        Picker("", selection: Binding(
+            get: { settings.appModeRaw },
+            set: { newValue in
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                    settings.appModeRaw = newValue
                 }
-                .buttonStyle(.plain)
-                .hoverHaptic()
+            }
+        )) {
+            ForEach(AppMode.allCases) { mode in
+                Text(mode.shortLabel).tag(mode.rawValue)
             }
         }
-        .padding(3)
-        .background(Color.primary.opacity(0.07))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .fixedSize()
     }
 }
 
@@ -440,11 +447,11 @@ struct AddURLButton: View {
             HStack(spacing: 14) {
                 ZStack {
                     Circle()
-                        .fill(hovered ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.06))
+                        .fill(hovered ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.05))
                         .frame(width: 36, height: 36)
                     Image(systemName: "plus")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(hovered ? Color.accentColor : Color.secondary.opacity(0.38))
+                        .foregroundStyle(hovered ? Color.accentColor : Color.secondary.opacity(0.4))
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Add URL to download")
@@ -452,29 +459,44 @@ struct AddURLButton: View {
                         .foregroundStyle(hovered ? Color.accentColor : Color.secondary.opacity(0.55))
                     Text("Paste a YouTube, Twitch, Vimeo or any site URL   ·   ⌘N")
                         .font(.system(size: 10.5))
-                        .foregroundStyle(Color.secondary.opacity(0.30))
+                        .foregroundStyle(Color.secondary.opacity(0.32))
                 }
                 Spacer()
             }
             .padding(.horizontal, 20).padding(.vertical, 16)
             .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(
-                        style: StrokeStyle(lineWidth: 1.5, dash: [7, 5]))
-                    .foregroundStyle(hovered
-                        ? Color.accentColor.opacity(0.45)
-                        : Color(.separatorColor).opacity(0.35))
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .background {
+                let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+                if #available(macOS 26.0, *) {
+                    shape
+                        .fill(hovered ? Color.accentColor.opacity(0.04) : Color.clear)
+                        .overlay {
+                            shape.strokeBorder(
+                                style: StrokeStyle(lineWidth: 1.5, dash: [7, 5])
+                            )
+                            .foregroundStyle(hovered
+                                ? Color.accentColor.opacity(0.5)
+                                : Color(.separatorColor).opacity(0.35))
+                        }
+                        .glassEffect(.regular.interactive(hovered), in: shape)
+                        .allowsHitTesting(false)
+                } else {
+                    shape
+                        .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [7, 5]))
+                        .foregroundStyle(hovered
+                            ? Color.accentColor.opacity(0.45)
+                            : Color(.separatorColor).opacity(0.35))
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
-        .buttonStyle(.plain).onHover { hovered = $0 }.hoverHaptic()
+        .buttonStyle(.plain).onHover { hovered = $0 }
         .animation(.spring(response: 0.18, dampingFraction: 0.75), value: hovered)
         .keyboardShortcut("n", modifiers: .command)
     }
 }
 
-// MARK: - Bottom Toolbar
+// MARK: - Bottom Toolbar (floating Liquid Glass bar)
 
 struct BottomToolbar: View {
     @EnvironmentObject var queue    : DownloadQueue
@@ -483,42 +505,86 @@ struct BottomToolbar: View {
     @EnvironmentObject var settings : SettingsManager
     @State private var showFfmpegSheet  = false
     @State private var showYtdlpSheet   = false
-    @State private var importToast: String? = nil   // brief "X URLs imported" message
+    @State private var importToast: String? = nil
 
     var body: some View {
+        toolbarContent
+        .sheet(isPresented: $showFfmpegSheet) { DepSheet(tool: "ffmpeg").environmentObject(deps) }
+        .sheet(isPresented: $showYtdlpSheet)  { DepSheet(tool: "yt-dlp").environmentObject(deps) }
+    }
+
+    @ViewBuilder
+    private var toolbarContent: some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: 10) {
+                toolbarButtons
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(.white.opacity(0.12), lineWidth: 0.5)
+                            .allowsHitTesting(false)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .shadow(color: .black.opacity(0.14), radius: 20, y: 8)
+                    .glassEffect(.regular.interactive(),
+                                 in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+        } else {
+            toolbarButtons
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5)
+                        .allowsHitTesting(false)
+                }
+                .shadow(color: .black.opacity(0.10), radius: 14, y: 5)
+        }
+    }
+
+    private var toolbarButtons: some View {
         HStack(spacing: 10) {
             DepPill(label: "ffmpeg", status: deps.ffmpeg) { showFfmpegSheet = true }
             DepPill(label: "yt-dlp", status: deps.ytdlp) { showYtdlpSheet  = true }
 
             Divider().frame(height: 16).opacity(0.35)
 
-            // Download location - NSOpenPanel avoids NSRendezvousSheetDelegate crash
             OutputFolderButton(directory: queue.outputDirectory, action: { pickOutputFolder() })
 
             CategoryPicker()
                 .environmentObject(settings)
                 .environmentObject(queue)
 
-            // Batch .txt import button
             Button {
                 importURLsFromFile()
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "doc.text").font(.system(size: 11))
-                    Text(importToast ?? "Import URLs")
-                        .font(.system(size: 12))
+                    Text(importToast ?? "Import")
+                        .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundStyle(importToast != nil ? .green : .secondary)
+                .padding(.horizontal, 8)
+                .frame(height: 28)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
             .help("Import a .txt file of URLs (one per line)")
             .animation(.easeOut(duration: 0.2), value: importToast)
 
-            Spacer()
+            Spacer(minLength: 8)
 
             if queue.jobs.contains(where: { $0.status.isTerminal }) {
-                Button("Clear done") { queue.clearCompleted() }
-                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(.secondary)
+                Button("Clear") { queue.clearCompleted() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .frame(height: 28)
+                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
 
             if queue.jobs.contains(where: { if case .failed = $0.status { return true }; return false }) {
@@ -526,10 +592,13 @@ struct BottomToolbar: View {
                     queue.retryFailed()
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "arrow.clockwise").font(.system(size: 10))
-                        Text("Retry failed").font(.system(size: 12))
+                        Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .semibold))
+                        Text("Retry").font(.system(size: 12, weight: .medium))
                     }
-                    .foregroundStyle(.red.opacity(0.75))
+                    .foregroundStyle(.red.opacity(0.8))
+                    .padding(.horizontal, 8)
+                    .frame(height: 28)
+                    .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .help("Re-queue all failed downloads")
@@ -538,18 +607,14 @@ struct BottomToolbar: View {
             Button {
                 queue.downloadAll()
             } label: {
-                Label("Download all", systemImage: "arrow.down.circle.fill")
-                    .font(.system(size: 13, weight: .medium))
+                Label("Download All", systemImage: "arrow.down.circle.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 4)
             }
-            .buttonStyle(PrimaryButtonStyle())
-            .hoverHaptic()
+            .glassPrimaryButtonStyle()
             .disabled(!queue.jobs.contains { $0.hasURL && !$0.status.isActive })
             .keyboardShortcut("d", modifiers: [.command, .shift])
         }
-        .padding(.horizontal, 20).padding(.vertical, 12)
-        .background(.ultraThinMaterial)
-        .sheet(isPresented: $showFfmpegSheet) { DepSheet(tool: "ffmpeg").environmentObject(deps) }
-        .sheet(isPresented: $showYtdlpSheet)  { DepSheet(tool: "yt-dlp").environmentObject(deps) }
     }
 
     private func pickOutputFolder() {
@@ -603,67 +668,51 @@ struct OutputFolderButton: View {
             HStack(spacing: 7) {
                 Image(systemName: "folder.fill")
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.accentColor.opacity(0.8))
+                    .foregroundStyle(Color.accentColor.opacity(0.85))
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Save to")
                         .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.secondary.opacity(0.6))
+                        .foregroundStyle(.secondary.opacity(0.65))
                     Text(directory.lastPathComponent)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.primary.opacity(0.75))
+                        .foregroundStyle(.primary.opacity(0.8))
                         .lineLimit(1)
                         .frame(maxWidth: 140, alignment: .leading)
                 }
 
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.secondary.opacity(0.5))
+                    .foregroundStyle(.secondary.opacity(0.55))
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(hovered ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.05))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(hovered ? Color.accentColor.opacity(0.3) : Color(.separatorColor).opacity(0.7), lineWidth: 0.5)
-            )
-        }
-        .buttonStyle(.plain).onHover { hovered = $0 }.hoverHaptic()
-        .help(directory.path)
-        .animation(.easeOut(duration: 0.12), value: hovered)
-    }
-}
-
-// MARK: - Theme Picker
-
-struct ThemePicker: View {
-    @EnvironmentObject var theme: ThemeManager
-    @State private var hovered = false
-    var body: some View {
-        Menu {
-            ForEach(AppTheme.allCases) { t in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { theme.set(t) }
-                    Haptics.tap()
-                } label: {
-                    Label(t.rawValue, systemImage: t.icon)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+                if #available(macOS 26.0, *) {
+                    shape.fill(hovered ? Color.accentColor.opacity(0.10) : Color.primary.opacity(0.05))
+                        .overlay {
+                            shape.strokeBorder(
+                                hovered ? Color.accentColor.opacity(0.35) : Color(.separatorColor).opacity(0.55),
+                                lineWidth: 0.5
+                            )
+                        }
+                        .glassEffect(.regular.interactive(hovered), in: shape)
+                        .allowsHitTesting(false)
+                } else {
+                    shape.fill(hovered ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.05))
+                        .overlay {
+                            shape.strokeBorder(
+                                hovered ? Color.accentColor.opacity(0.3) : Color(.separatorColor).opacity(0.7),
+                                lineWidth: 0.5
+                            )
+                        }
+                        .allowsHitTesting(false)
                 }
             }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: theme.current.icon).font(.system(size: 11))
-                Text(theme.current.rawValue).font(.system(size: 12))
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 9).frame(height: 28)
-            .background(.primary.opacity(hovered ? 0.07 : 0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(Color(.separatorColor).opacity(0.6), lineWidth: 0.5))
         }
-        .buttonStyle(.plain).onHover { hovered = $0 }.hoverHaptic().help("Switch theme")
+        .buttonStyle(.plain).onHover { hovered = $0 }
+        .help(directory.path)
+        .animation(.easeOut(duration: 0.12), value: hovered)
     }
 }
 
@@ -679,21 +728,35 @@ struct DepPill: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Circle().fill(status.dotColor).frame(width: 6, height: 6)
-                    .shadow(color: status.dotColor.opacity(0.5), radius: 3)
+                    .shadow(color: status.dotColor.opacity(0.55), radius: 3)
                     .opacity(isAnimating ? (animDot ? 0.2 : 1.0) : 1.0)
                     .animation(isAnimating ? .easeInOut(duration: 0.65).repeatForever(autoreverses: true) : .default, value: animDot)
-                Text(label).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.primary.opacity(0.65))
+                Text(label).font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.primary.opacity(hovered ? 0.8 : 0.65))
                 if let v = status.version {
                     Text(v).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.secondary.opacity(0.45))
                 }
             }
             .padding(.horizontal, 10).frame(height: 28)
-            .background(.primary.opacity(hovered ? 0.07 : 0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(Color(.separatorColor).opacity(0.7), lineWidth: 0.5))
+            .background {
+                let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+                if #available(macOS 26.0, *) {
+                    shape.fill(Color.primary.opacity(hovered ? 0.07 : 0.04))
+                        .overlay {
+                            shape.strokeBorder(Color(.separatorColor).opacity(0.55), lineWidth: 0.5)
+                        }
+                        .glassEffect(.regular.interactive(hovered), in: shape)
+                        .allowsHitTesting(false)
+                } else {
+                    shape.fill(Color.primary.opacity(hovered ? 0.07 : 0.04))
+                        .overlay {
+                            shape.strokeBorder(Color(.separatorColor).opacity(0.7), lineWidth: 0.5)
+                        }
+                        .allowsHitTesting(false)
+                }
+            }
         }
-        .buttonStyle(.plain).onHover { hovered = $0 }.hoverHaptic()
+        .buttonStyle(.plain).onHover { hovered = $0 }
         .onAppear { if isAnimating { animDot = true } }
         .onChange(of: isAnimating) { animDot = $0 }
         .help(status.statusLabel)
@@ -704,14 +767,79 @@ struct DepPill: View {
 
 struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) var enabled
-    func makeBody(configuration: Configuration) -> some View {
+    @ViewBuilder func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(enabled ? .white : .secondary)
             .padding(.horizontal, 14).frame(height: 32)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(enabled ? Color.accentColor.opacity(configuration.isPressed ? 0.75 : 1.0) : Color.primary.opacity(0.08)))
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(enabled
+                    ? Color.accentColor.opacity(configuration.isPressed ? 0.75 : 1.0)
+                    : Color.primary.opacity(0.08)))
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Liquid Glass helpers
+
+extension View {
+    /// Prominent primary CTA — real glass on macOS 26+, accent pill fallback.
+    @ViewBuilder
+    func glassPrimaryButtonStyle() -> some View {
+        if #available(macOS 26.0, *) {
+            self.buttonStyle(.glassProminent)
+        } else {
+            self.buttonStyle(PrimaryButtonStyle())
+        }
+    }
+
+    /// Secondary toolbar/control button.
+    @ViewBuilder
+    func glassSecondaryButtonStyle() -> some View {
+        if #available(macOS 26.0, *) {
+            self.buttonStyle(.glass)
+        } else {
+            self.buttonStyle(.plain)
+        }
+    }
+
+    /// Floating chrome bar (header / toolbar). Liquid Glass on macOS 26+, material fallback.
+    /// Always passes an explicit shape — bare `glassEffect(.regular)` draws a giant circle.
+    @ViewBuilder
+    func yoinkGlassSurface(cornerRadius: CGFloat) -> some View {
+        if #available(macOS 26.0, *) {
+            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            self
+                .background(.ultraThinMaterial, in: shape)
+                .overlay {
+                    shape.strokeBorder(.white.opacity(0.10), lineWidth: 0.5)
+                }
+                .glassEffect(.regular.interactive(), in: shape)
+                .clipShape(shape)
+        } else {
+            self
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5)
+                }
+        }
+    }
+
+    /// Card / grouped-section glass surface.
+    @ViewBuilder
+    func yoinkGlassCard(cornerRadius: CGFloat = 14) -> some View {
+        if #available(macOS 26.0, *) {
+            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            self
+                .background(shape.fill(.thinMaterial))
+                .overlay {
+                    shape.strokeBorder(Color(.separatorColor).opacity(0.35), lineWidth: 0.5)
+                }
+                .glassEffect(.regular, in: shape)
+        } else {
+            self
+        }
     }
 }
 

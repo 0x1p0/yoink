@@ -1,5 +1,20 @@
 import SwiftUI
 
+// Liquid Glass for job cards — applied on the card content, not a detached background shape
+struct JobCardGlassModifier: ViewModifier {
+    let hovered: Bool
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.glassEffect(
+                .regular.interactive(hovered),
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+        } else {
+            content
+        }
+    }
+}
+
 // MARK: - Job Card
 
 struct JobCard: View {
@@ -155,16 +170,38 @@ struct JobCard: View {
                     .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 10)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(theme.cardFill)
-                .shadow(color: theme.cardShadow.opacity(hovered ? 0.12 : 0.06),
-                        radius: hovered ? 12 : 6, y: 3)
-        )
-        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
-            .strokeBorder(theme.cardBorder, lineWidth: 0.5))
+        .background {
+            if #available(macOS 26.0, *) {
+                let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+                shape
+                    .fill(.thinMaterial)
+                    .shadow(color: .black.opacity(hovered ? 0.16 : 0.08),
+                            radius: hovered ? 16 : 8, y: 4)
+                    .overlay {
+                        shape.strokeBorder(
+                            hovered
+                                ? Color.accentColor.opacity(0.22)
+                                : Color(.separatorColor).opacity(0.30),
+                            lineWidth: 0.5
+                        )
+                    }
+            } else {
+                let shape = RoundedRectangle(cornerRadius: 13, style: .continuous)
+                shape
+                    .fill(theme.cardFill)
+                    .shadow(color: theme.cardShadow.opacity(hovered ? 0.12 : 0.06),
+                            radius: hovered ? 12 : 6, y: 3)
+                    .overlay {
+                        shape.strokeBorder(theme.cardBorder, lineWidth: 0.5)
+                    }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .modifier(JobCardGlassModifier(hovered: hovered))
+        .scaleEffect(hovered ? 1.005 : 1.0)
+        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: hovered)
         .onHover { hovered = $0 }
-        .hoverHaptic()
+
         .sheet(isPresented: $showCookies) {
             CookiesSheet(job: job)
                 .onDisappear { DownloadService.shared.refetchMetadata(for: job) }
@@ -709,12 +746,17 @@ struct JobOptionsPanel: View {
                         }
                         .buttonStyle(.plain)
                         .onAppear {
-                            if job.subLang.isEmpty || !langs.contains(job.subLang),
-                               let first = langs.first { job.subLang = first }
+                            let fallback = langs
+                            DispatchQueue.main.async {
+                                if job.subLang.isEmpty || !fallback.contains(job.subLang),
+                                   let first = fallback.first { job.subLang = first }
+                            }
                         }
                         .onChange(of: langs) { newLangs in
-                            if job.subLang.isEmpty || !newLangs.contains(job.subLang),
-                               let first = newLangs.first { job.subLang = first }
+                            DispatchQueue.main.async {
+                                if job.subLang.isEmpty || !newLangs.contains(job.subLang),
+                                   let first = newLangs.first { job.subLang = first }
+                            }
                         }
                     } else if job.metaState == .fetching {
                         Text("detecting…")
@@ -797,7 +839,7 @@ struct JobOptionsPanel: View {
                                 // Chapter quick-fill buttons (manual mode only)
                                 if let chapters = job.meta?.chapters, !chapters.isEmpty {
                                     VStack(alignment: .leading, spacing: 5) {
-                                        Text("JUMP TO SECTION")
+                                        Text("Jump to Section")
                                             .font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
                                         ScrollView(.horizontal, showsIndicators: false) {
                                             HStack(spacing: 5) {
@@ -827,7 +869,7 @@ struct JobOptionsPanel: View {
                                                             .strokeBorder(Color.accentColor.opacity(0.2), lineWidth: 0.5))
                                                     }
                                                     .buttonStyle(.plain)
-                                                    .hoverHaptic()
+
                                                 }
                                             }
                                         }
@@ -836,7 +878,7 @@ struct JobOptionsPanel: View {
                             } else if let chapters = job.meta?.chapters, !chapters.isEmpty {
                                 // Chapter pick mode - multi-select list
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("SELECT CHAPTERS TO DOWNLOAD")
+                                    Text("Select Chapters to Download")
                                         .font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
                                     VStack(spacing: 2) {
                                         ForEach(chapters) { ch in
@@ -1359,18 +1401,33 @@ struct DownloadButton: View {
             let isActive = job.status.isActive || job.status.isPaused
             let showRing = isActive && progress > 0
 
-            ZStack {
-                // Background pill (shown when NOT showing ring)
-                if !showRing {
-                    HStack(spacing: 5) {
-                        Image(systemName: btnIcon).font(.system(size: 10, weight: .semibold))
-                        Text(btnLabel).font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundStyle(btnFg)
-                    .padding(.horizontal, 13).frame(height: 30)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(btnBg))
-                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(btnBorder, lineWidth: 0.5))
-                } else {
+                ZStack {
+                    // Background pill (shown when NOT showing ring)
+                    if !showRing {
+                        HStack(spacing: 5) {
+                            Image(systemName: btnIcon).font(.system(size: 10, weight: .semibold))
+                            Text(btnLabel).font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundStyle(btnFg)
+                        .padding(.horizontal, 13).frame(height: 30)
+                        .background {
+                            let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            if #available(macOS 26.0, *) {
+                                shape.fill(btnBg)
+                                    .overlay {
+                                        shape.strokeBorder(btnBorder, lineWidth: 0.5)
+                                    }
+                                    .glassEffect(.regular.interactive(), in: shape)
+                                    .allowsHitTesting(false)
+                            } else {
+                                shape.fill(btnBg)
+                                    .overlay {
+                                        shape.strokeBorder(btnBorder, lineWidth: 0.5)
+                                    }
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                    } else {
                     // Progress ring with icon in centre
                     ZStack {
                         // Track
@@ -1472,23 +1529,53 @@ struct IconButton: View {
     @State private var hovered = false
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage).font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(fg).frame(width: 30, height: 30)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(bg))
-                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(Color(.separatorColor).opacity(hovered ? 0.9 : 0.4), lineWidth: 0.5))
+            Image(systemName: systemImage)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(fg)
+                .frame(width: 30, height: 30)
+                .background { buttonChrome }
         }
-        .buttonStyle(.plain).onHover { hovered = $0 }.hoverHaptic().help(tooltip)
+        .buttonStyle(.plain).onHover { hovered = $0 }.help(tooltip)
+        .modifier(IconButtonGlassOnLabel(hovered: hovered, enabled: tint == nil && !destructive))
         .animation(.easeOut(duration: 0.12), value: hovered)
+    }
+
+    @ViewBuilder
+    private var buttonChrome: some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        shape
+            .fill(bg)
+            .overlay {
+                shape.strokeBorder(
+                    hovered ? Color(.separatorColor).opacity(0.9) : Color(.separatorColor).opacity(0.35),
+                    lineWidth: 0.5
+                )
+            }
+            .allowsHitTesting(false)
     }
     var fg: Color {
         if destructive { return hovered ? .red : .secondary.opacity(0.5) }
         if let tint    { return tint }
-        return hovered ? .primary.opacity(0.8) : .secondary.opacity(0.55)
+        return hovered ? .primary.opacity(0.85) : .secondary.opacity(0.55)
     }
     var bg: Color {
         if destructive && hovered { return .red.opacity(0.08) }
-        if let tint               { return tint.opacity(0.1) }
+        if let tint               { return tint.opacity(hovered ? 0.16 : 0.10) }
         return .primary.opacity(hovered ? 0.07 : 0.04)
+    }
+}
+
+private struct IconButtonGlassOnLabel: ViewModifier {
+    let hovered: Bool
+    let enabled: Bool
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *), enabled {
+            content.glassEffect(
+                .regular.interactive(hovered),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+        } else {
+            content
+        }
     }
 }
