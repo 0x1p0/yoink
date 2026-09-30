@@ -17,6 +17,9 @@ jobs:
     name: Build & publish release
     runs-on: macos-26
     timeout-minutes: 45
+    env:
+      VERSION: 1.0.${{ github.run_number }}
+      APP: build/Build/Products/Release/Yoink.app
 
     steps:
       - name: Checkout
@@ -33,41 +36,69 @@ jobs:
       - name: Fetch bundled binaries
         run: bash ./download_binaries.sh
 
-      - name: Build (Release)
+      - name: Build (Release, universal)
         run: |
+          # generic/platform=macOS + explicit ARCHS → one app that runs natively on
+          # Apple Silicon and Intel. (A plain 'platform=macOS' destination only builds
+          # the runner's own architecture.) The version is stamped in so the in-app
+          # update check compares against the real release number.
           xcodebuild -project Yoink.xcodeproj -scheme Yoink -configuration Release \
-            -destination 'platform=macOS' \
+            -destination 'generic/platform=macOS' \
             -derivedDataPath build \
+            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual CODE_SIGNING_REQUIRED=NO \
             build
 
+      - name: Verify universal binaries
+        run: |
+          fail=0
+          check() {
+            archs="$(lipo -archs "$1" 2>/dev/null || true)"
+            echo "$(basename "$1"): ${archs:-missing}"
+            case "$archs" in
+              *arm64*x86_64*|*x86_64*arm64*) ;;
+              *) echo "::error::$1 is not universal (arm64 + x86_64)"; fail=1 ;;
+            esac
+          }
+          check "$APP/Contents/MacOS/Yoink"
+          check "$APP/Contents/Resources/bin/yt-dlp_macos/yt-dlp_macos"
+          check "$APP/Contents/Resources/bin/ffmpeg"
+          check "$APP/Contents/Resources/bin/ffprobe"
+          echo "Minimum macOS: $(/usr/libexec/PlistBuddy -c 'Print LSMinimumSystemVersion' "$APP/Contents/Info.plist")"
+          echo "Version: $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+          exit $fail
+
       - name: Ad-hoc sign
         run: |
-          APP="build/Build/Products/Release/Yoink.app"
           test -d "$APP"
           codesign --force --deep --sign - \
             --entitlements Yoink/Yoink.entitlements \
             "$APP"
           codesign --verify --deep --strict "$APP"
 
-      - name: Package DMG
+      - name: Package styled DMG
         run: |
-          VERSION="1.0.${{ github.run_number }}"
-          APP="build/Build/Products/Release/Yoink.app"
-          STAGING="$(mktemp -d)"
-          cp -R "$APP" "$STAGING/"
-          ln -s /Applications "$STAGING/Applications"
-          # ULMO (LZMA) packs the bundled ffmpeg/ffprobe/yt-dlp far tighter than UDZO (zlib):
-          # ~20% smaller download. Opens on macOS 10.15+, well below our macOS 13 minimum.
-          hdiutil create -volname "Yoink $VERSION" -srcfolder "$STAGING" \
-            -ov -format ULMO "Yoink-$VERSION.dmg"
+          # Custom background, icon layout, volume icon and LZMA compression
+          # (see packaging/dmg/). dmgbuild writes the Finder layout directly — no GUI needed.
+          bash packaging/dmg/make_dmg.sh "$APP" "Yoink-$VERSION.dmg" "Yoink $VERSION"
           ls -lh "Yoink-$VERSION.dmg"
+
+      - name: Verify DMG
+        run: |
+          MNT="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "Yoink-$VERSION.dmg"
+          test -L "$MNT/Applications"
+          test -f "$MNT/.background.tiff"
+          # A broken signature makes macOS report the app as "damaged" — catch it here
+          codesign --verify --deep --strict "$MNT/Yoink.app"
+          hdiutil detach "$MNT"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: Yoink v1.0.${{ github.run_number }}
+          tag_name: v${{ env.VERSION }}
+          name: Yoink v${{ env.VERSION }}
           generate_release_notes: true
           files: Yoink-*.dmg
           fail_on_unmatched_files: true
