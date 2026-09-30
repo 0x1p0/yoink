@@ -261,6 +261,14 @@ final class DownloadJob: ObservableObject, Identifiable {
 
     var process: Process?
 
+    /// New jobs start from the defaults chosen in Settings → Downloads.
+    init() {
+        let sm = SettingsManager.shared
+        format       = sm.defaultFormat
+        downloadSubs = sm.autoDownloadSubs
+        subLang      = sm.defaultSubLang.isEmpty ? "en" : sm.defaultSubLang
+    }
+
     // Computed
     var hasURL     : Bool { !url.trimmingCharacters(in: .whitespaces).isEmpty }
 

@@ -39,54 +39,25 @@ struct WatchLaterView: View {
         VStack(spacing: 0) {
             // Toolbar
             HStack(spacing: 10) {
-                // Search
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary)
-                    TextField("Search saved…", text: $search).textFieldStyle(.plain).font(.system(size: 13))
-                    if !search.isEmpty {
-                        Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 10).padding(.vertical, 7)
-                .background {
-                    let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    if #available(macOS 26.0, *) {
-                        shape
-                            .fill(Color.primary.opacity(0.05))
-                            .overlay {
-                                shape.strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5)
-                            }
-                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                            .allowsHitTesting(false)
-                    } else {
-                        shape
-                            .fill(Color.primary.opacity(0.06))
-                            .overlay {
-                                shape.strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5)
-                            }
-                            .allowsHitTesting(false)
-                    }
-                }
+                YoinkSearchField(prompt: "Search saved", text: $search)
 
-                Text("\(filtered.count) saved").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("\(filtered.count) saved")
+                    .font(.system(size: 11.5)).foregroundStyle(.secondary).monospacedDigit()
 
                 Spacer()
 
                 // ── Global toggles ──────────────────────────────────────
                 HStack(spacing: 6) {
-                    WLToggleChip(
-                        label: "SponsorBlock",
-                        icon: "scissors",
-                        active: settings.watchLaterSponsorBlock,
-                        activeColor: .orange
-                    ) { settings.watchLaterSponsorBlock.toggle() }
-
-                    WLToggleChip(
-                        label: "Subtitles",
-                        icon: "captions.bubble",
-                        active: settings.watchLaterSubtitles,
-                        activeColor: .blue
-                    ) { settings.watchLaterSubtitles.toggle() }
+                    OptionChip(title: "Skip Sponsors", icon: "forward.end",
+                               isOn: settings.watchLaterSponsorBlock,
+                               help: "Cut sponsor segments from Watch Later downloads (SponsorBlock)") {
+                        settings.watchLaterSponsorBlock.toggle()
+                    }
+                    OptionChip(title: "Subtitles", icon: "captions.bubble",
+                               isOn: settings.watchLaterSubtitles,
+                               help: "Grab subtitles for Watch Later downloads when available") {
+                        settings.watchLaterSubtitles.toggle()
+                    }
                 }
 
                 // Download all button
@@ -98,12 +69,12 @@ struct WatchLaterView: View {
                             if !selectionMode { selectedIDs.removeAll() }
                         }
                     } label: {
-                        Text(selectionMode ? "Cancel" : "Select")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(selectionMode ? Color.secondary : Color.accentColor)
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background((selectionMode ? Color.primary : Color.accentColor).opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        Text(selectionMode ? "Done" : "Select")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(selectionMode ? Color.primary : Color.accentColor)
+                            .padding(.horizontal, 10).frame(height: 28)
+                            .background((selectionMode ? Color.primary : Color.accentColor).opacity(0.08),
+                                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
                     .buttonStyle(.plain)
 
@@ -117,12 +88,12 @@ struct WatchLaterView: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "arrow.down.circle.fill").font(.system(size: 11))
                                 Text(selectedIDs.isEmpty ? "Download Selected" : "Download \(selectedIDs.count)")
-                                    .font(.system(size: 11, weight: .medium))
+                                    .font(.system(size: 12, weight: .semibold))
                             }
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(selectedIDs.isEmpty ? Color.accentColor.opacity(0.4) : Color.accentColor)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .padding(.horizontal, 11).frame(height: 28)
+                            .background(selectedIDs.isEmpty ? Color.accentColor.opacity(0.4) : Color.accentColor,
+                                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                         .buttonStyle(.plain)
                         .disabled(selectedIDs.isEmpty)
@@ -132,36 +103,38 @@ struct WatchLaterView: View {
                         } label: {
                             HStack(spacing: 5) {
                                 Image(systemName: "arrow.down.circle.fill").font(.system(size: 11))
-                                Text("Download All").font(.system(size: 11, weight: .medium))
+                                Text("Download All").font(.system(size: 12, weight: .semibold))
                             }
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(Color.accentColor)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .padding(.horizontal, 11).frame(height: 28)
+                            .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }
                 }
 
-                // Clear all
+                // Less common actions
                 if !watchLater.items.isEmpty {
-                    Button {
-                        confirmClear = true
+                    Menu {
+                        Button("Clear Watch Later…", role: .destructive) { confirmClear = true }
                     } label: {
-                        Text("Clear All").font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.red.opacity(0.8))
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(Color.red.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 30, height: 30)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .confirmationDialog("Clear Watch Later list?", isPresented: $confirmClear) {
+                    .compactMenuStyle()
+                    .help("More")
+                    .confirmationDialog("Clear your Watch Later list?", isPresented: $confirmClear, titleVisibility: .visible) {
                         Button("Clear All", role: .destructive) { watchLater.removeAll() }
                         Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Saved links are removed. Scheduled downloads are not affected.")
                     }
                 }
             }
-            .padding(.horizontal, 16).padding(.vertical, 10)
+            .padding(.horizontal, 20).padding(.vertical, 10)
 
             Divider().opacity(0.08)
 
@@ -396,66 +369,6 @@ struct WatchLaterView: View {
         queue.ensureOutputDir()
         queue.downloadAll()
         Haptics.success()
-    }
-}
-
-// MARK: - Watch Later Toggle Chip
-
-struct WLToggleChip: View {
-    let label      : String
-    let icon       : String
-    let active     : Bool
-    var activeColor: Color = .accentColor
-    let action     : () -> Void
-    @State private var hovered = false
-
-    var body: some View {
-        Button(action: {
-            action()
-            active ? Haptics.toggleOff() : Haptics.toggleOn()
-        }) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .semibold))
-                Text(label)
-                    .font(.system(size: 11, weight: .medium))
-                if active {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 8, weight: .bold))
-                }
-            }
-            .foregroundStyle(active ? activeColor : Color.primary.opacity(0.5))
-            .padding(.horizontal, 9).padding(.vertical, 5)
-            .background {
-                let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-                if #available(macOS 26.0, *) {
-                    shape
-                        .fill(active ? activeColor.opacity(0.12) : Color.primary.opacity(hovered ? 0.06 : 0.04))
-                        .overlay {
-                            shape.strokeBorder(
-                                active ? activeColor.opacity(0.35) : Color(.separatorColor).opacity(0.4),
-                                lineWidth: 0.5
-                            )
-                        }
-                        .glassEffect(.regular.interactive(hovered || active), in: shape)
-                        .allowsHitTesting(false)
-                } else {
-                    shape
-                        .fill(active ? activeColor.opacity(0.12) : Color.primary.opacity(hovered ? 0.06 : 0.04))
-                        .overlay {
-                            shape.strokeBorder(
-                                active ? activeColor.opacity(0.35) : Color(.separatorColor).opacity(0.4),
-                                lineWidth: 0.5
-                            )
-                        }
-                        .allowsHitTesting(false)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .onHover { hovered = $0 }
-        .animation(.easeOut(duration: 0.1), value: active)
-        .help(active ? "\(label) ON - click to disable" : "\(label) OFF - click to enable")
     }
 }
 

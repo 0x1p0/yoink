@@ -35,6 +35,7 @@
 		AA000035 /* DownloadService.swift in Sources */       = {isa = PBXBuildFile; fileRef = AA100035; };
 		AA000036 /* ThumbnailCache.swift in Sources */        = {isa = PBXBuildFile; fileRef = AA100036; };
 		AA000037 /* AppUpdateService.swift in Sources */      = {isa = PBXBuildFile; fileRef = AA100037; };
+		AA000038 /* YoinkUI.swift in Sources */             = {isa = PBXBuildFile; fileRef = AA100038; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -68,6 +69,7 @@
 		AA100036 /* ThumbnailCache.swift */      = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = ThumbnailCache.swift;      sourceTree = "<group>"; };
 		AA100037 /* AppUpdateService.swift */    = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = AppUpdateService.swift;    sourceTree = "<group>"; };
 		AA200001 /* Yoink.app */                  = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Yoink.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA100038 /* YoinkUI.swift */            = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift;          path = YoinkUI.swift;            sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -90,7 +92,7 @@
 		};
 		AA300005 /* Views */ = {
 			isa = PBXGroup;
-			children = (AA100002, AA100003, AA100011, AA100012, AA100013, AA100015, AA100016, AA100021, AA100022);
+			children = (AA100002, AA100003, AA100011, AA100012, AA100013, AA100015, AA100016, AA100021, AA100022, AA100038);
 			path = Views;
 			sourceTree = "<group>";
 		};
@@ -233,6 +235,7 @@
 				AA000030 /* ScheduledDownloadStore.swift in Sources */,
 				AA000021 /* WatchLaterView.swift in Sources */,
 				AA000022 /* TutorialView.swift in Sources */,
+				AA000038 /* YoinkUI.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

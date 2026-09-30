@@ -320,18 +320,6 @@ struct AppearanceSettings: View {
                                 // (handled in AppDelegate.windowWillClose)
                             }
                     }
-                    SettingsDivider()
-                    SettingsRow("Compact cards",
-                                detail: "Smaller job cards, less padding",
-                                icon: "rectangle.compress.vertical") {
-                        Toggle("", isOn: $settings.compactCards).labelsHidden()
-                    }
-                    SettingsDivider()
-                    SettingsRow("Show thumbnails",
-                                detail: "Load and display video thumbnails (slower metadata fetch)",
-                                icon: "photo") {
-                        Toggle("", isOn: $settings.showThumbnails).labelsHidden()
-                    }
                 }
 
                 // ── Haptics ───────────────────────────────────────────────
@@ -340,18 +328,6 @@ struct AppearanceSettings: View {
                                 detail: "Off by default — native macOS apps don't use trackpad haptics",
                                 icon: "hand.point.up.left") {
                         Toggle("", isOn: $settings.hapticsEnabled).labelsHidden()
-                    }
-                    SettingsDivider()
-                    SettingsRow("Intensity",
-                                detail: "How strong the feedback feels",
-                                icon: "waveform.path") {
-                        Picker("", selection: $settings.hapticIntensityRaw) {
-                            Text("Light").tag("light")
-                            Text("Medium").tag("medium")
-                            Text("Strong").tag("strong")
-                        }
-                        .labelsHidden().pickerStyle(.segmented).frame(width: 180)
-                        .disabled(!settings.hapticsEnabled)
                     }
                 }
             }
@@ -868,50 +844,6 @@ struct OutputCategoryRow: View {
                     .foregroundStyle(Color.red.opacity(0.6))
             }
             .buttonStyle(.plain)
-        }
-    }
-}
-
-struct CategoryPicker: View {
-    @EnvironmentObject var settings: SettingsManager
-    @EnvironmentObject var queue: DownloadQueue
-
-    var categories: [OutputCategory] { settings.outputCategories.filter { !$0.path.isEmpty } }
-
-    var currentName: String {
-        if let cat = categories.first(where: { URL(fileURLWithPath: $0.path) == queue.outputDirectory }) {
-            return "\(cat.emoji) \(cat.name)"
-        }
-        return queue.outputDirectory.lastPathComponent
-    }
-
-    var body: some View {
-        if !categories.isEmpty {
-            Menu {
-                ForEach(categories) { cat in
-                    Button {
-                        queue.outputDirectory = URL(fileURLWithPath: cat.path)
-                        Haptics.tap()
-                    } label: {
-                        Label("\(cat.emoji) \(cat.name)", systemImage: URL(fileURLWithPath: cat.path) == queue.outputDirectory ? "checkmark" : "folder")
-                    }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "folder.badge.plus").font(.system(size: 10, weight: .medium))
-                    Text(currentName).font(.system(size: 11, weight: .medium)).lineLimit(1)
-                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 8))
-                }
-                .foregroundStyle(Color.accentColor)
-                .padding(.horizontal, 8).padding(.vertical, 5)
-                .background(Color.accentColor.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7)
-                    .strokeBorder(Color.accentColor.opacity(0.25), lineWidth: 0.5))
-            }
-            .buttonStyle(.plain)
-
-            .help("Save location category")
         }
     }
 }

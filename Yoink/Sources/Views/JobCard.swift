@@ -1,31 +1,22 @@
 import SwiftUI
 
-// Liquid Glass for job cards — applied on the card content, not a detached background shape
-struct JobCardGlassModifier: ViewModifier {
-    let hovered: Bool
-    func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content.glassEffect(
-                .regular.interactive(hovered),
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-            )
-        } else {
-            content
-        }
-    }
-}
-
 // MARK: - Job Card
+//
+// One card per link. The top row is always the same: status, link, a "…" menu for
+// the less common actions, the primary Download/Pause/Reveal button, and remove.
+// Options are only shown while they can still change the download; once it starts,
+// the card collapses to a progress line.
 
 struct JobCard: View {
     @ObservedObject var job: DownloadJob
     @EnvironmentObject var queue: DownloadQueue
     @EnvironmentObject var theme: ThemeManager
     var onPlaylistDetected: (() -> Void)? = nil
-    @State private var showCookies       = false
-    @State private var hovered           = false
+    @State private var showCookies        = false
+    @State private var hovered            = false
     @State private var dismissedDuplicate = false
-    @State private var showSchedule      = false
+    @State private var showSchedule       = false
+    @State private var showLog            = false
 
     /// Check if this URL was already downloaded
     private var duplicateEntry: HistoryEntry? {
@@ -33,175 +24,91 @@ struct JobCard: View {
         return HistoryStore.shared.existingEntry(for: job.url)
     }
 
+    private var showsProgress: Bool {
+        job.status.isActive || job.status.isPaused || job.status.isDone
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // URL row
-            HStack(spacing: 10) {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.primary.opacity(hovered ? 0.25 : 0.1))
-                    .frame(width: 16)
-                    .animation(.easeOut(duration: 0.15), value: hovered)
-                StatusIndicator(job: job)
-                URLInputField(job: job)
-                Spacer(minLength: 0)
-                HStack(spacing: 5) {
-                    // Save for later (only when idle and has URL)
-                    if job.hasURL && job.status == .idle {
-                        IconButton(systemImage: "bookmark", tint: nil, tooltip: "Save to Watch Later") {
-                            WatchLaterStore.shared.add(url: job.url,
-                                title: job.meta?.title ?? "",
-                                thumbnail: job.meta?.thumbnail ?? "",
-                                format: job.format,
-                                isPlaylist: DownloadJob.looksLikePlaylist(job.url) && !DownloadService.isSoopOrAfreecaURL(job.url))
-                            queue.remove(job)
-                        }
-                        IconButton(systemImage: "alarm", tint: nil, tooltip: "Schedule download") {
-                            showSchedule = true
-                        }
-                    }
-                    // Stop (cancel) button - shown when downloading or paused
-                    if job.status.isActive || job.status.isPaused {
-                        IconButton(systemImage: "stop.fill", tint: .red, tooltip: "Cancel download") {
-                            job.cancel()
-                            Haptics.tap()
-                        }
-                    }
-                    IconButton(systemImage: job.hasCookies ? "key.fill" : "key",
-                               tint: job.hasCookies ? .orange : nil,
-                               tooltip: "Authentication & Cookies") { showCookies = true }
-                    DownloadButton(job: job)
-                    // Clear/dismiss: resets the card to blank when idle/active, removes when done/failed
-                    if job.status.isDone || job.status == .cancelled || queue.jobs.count > 1 || job.hasURL {
-                        IconButton(
-                            systemImage: job.status.isTerminal ? "xmark.circle.fill" : "xmark",
-                            tint: job.status.isTerminal ? .secondary : nil,
-                            tooltip: job.status.isTerminal ? "Dismiss" : "Remove",
-                            destructive: false
-                        ) {
-                            if queue.jobs.count > 1 || job.hasURL {
-                                queue.remove(job)
-                            } else {
-                                job.reset()
-                                job.url = ""
-                                job.meta = nil
-                                job.metaState = .idle
-                                job.thumbnailLoaded = false
-                                job.selectedVideoFormatId = ""
-                                job.selectedAudioFormatId = ""
-                            }
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 16).padding(.vertical, 13)
+            topRow
+                .padding(.leading, 14).padding(.trailing, 12)
+                .padding(.vertical, 11)
 
-            // Progress bar + size + sparkline
-            if job.status.progress > 0 || job.status.isDone {
-                VStack(spacing: 3) {
-                    JobProgressBar(job: job)
-                    HStack(spacing: 8) {
-                        if let size = job.sizeLabel {
-                            Text(size)
-                                .font(.system(size: 9.5, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if job.status.isActive && job.speedHistory.count > 2 {
-                            SpeedSparkline(samples: job.speedHistory)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
+            if showsProgress && job.meta == nil {
+                progressSection
+                    .padding(.horizontal, 16).padding(.bottom, 12)
+                    .transition(.opacity)
             }
 
-            // Duplicate warning
             if let dup = duplicateEntry {
-                Divider().opacity(0.06)
                 DuplicateWarningBanner(
                     entry: dup,
                     onDismiss: { dismissedDuplicate = true },
                     onReveal:  { dismissedDuplicate = true },
                     onRemove:  { queue.remove(job) }
                 )
-                .padding(.horizontal, 16).padding(.vertical, 10)
+                .padding(.horizontal, 14).padding(.bottom, 12)
             }
 
-            // Content below URL
             if job.hasURL {
-                Divider().opacity(0.07)
                 Group {
                     switch job.metaState {
                     case .fetching:
+                        cardDivider
                         MetadataSkeletonView()
                             .transition(.opacity)
-                    case .needsAuth:
-                        VStack(spacing: 0) {
-                            AuthNudgeBanner(job: job, cookiesFailed: false)
-                                .padding(.horizontal, 16).padding(.vertical, 14)
-                        }
-                        .transition(.opacity)
-                    case .needsAuthRetry:
-                        VStack(spacing: 0) {
-                            AuthNudgeBanner(job: job, cookiesFailed: true)
-                                .padding(.horizontal, 16).padding(.vertical, 14)
-                        }
-                        .transition(.opacity)
+                    case .needsAuth, .needsAuthRetry:
+                        cardDivider
+                        AuthNudgeBanner(job: job, cookiesFailed: job.metaState == .needsAuthRetry)
+                            .padding(.horizontal, 14).padding(.vertical, 12)
+                            .transition(.opacity)
                     case .done, .idle:
-                        VStack(spacing: 0) {
+                        if job.meta != nil || job.isEditable {
+                            cardDivider
+                        }
+                        VStack(alignment: .leading, spacing: 14) {
                             if let meta = job.meta {
                                 MetadataHeaderView(meta: meta, job: job)
-                                    .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 10)
-                                Divider().opacity(0.07)
                             }
-                            JobOptionsPanel(job: job)
-                                .padding(.horizontal, 16).padding(.vertical, 14)
+                            if showsProgress && job.meta != nil {
+                                progressSection
+                                    .transition(.opacity)
+                            }
+                            if job.isEditable {
+                                JobOptionsPanel(job: job)
+                            }
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, (job.meta != nil || job.isEditable) ? 14 : 0)
                         .transition(.opacity)
                     }
                 }
                 .animation(.easeInOut(duration: 0.2), value: job.metaState)
             }
 
-            // Log
-            if !job.log.isEmpty && (job.status.isActive || job.status.isTerminal) {
-                Divider().opacity(0.06)
-                JobLogView(log: job.log)
-                    .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 10)
+            if job.isFailed {
+                failureFooter
             }
         }
         .background {
+            let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
             if #available(macOS 26.0, *) {
-                let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
                 shape
                     .fill(.thinMaterial)
-                    .shadow(color: .black.opacity(hovered ? 0.16 : 0.08),
-                            radius: hovered ? 16 : 8, y: 4)
-                    .overlay {
-                        shape.strokeBorder(
-                            hovered
-                                ? Color.accentColor.opacity(0.22)
-                                : Color(.separatorColor).opacity(0.30),
-                            lineWidth: 0.5
-                        )
-                    }
+                    .shadow(color: .black.opacity(hovered ? 0.12 : 0.06), radius: hovered ? 12 : 6, y: 3)
+                    .overlay { shape.strokeBorder(borderColor, lineWidth: 0.5) }
             } else {
-                let shape = RoundedRectangle(cornerRadius: 13, style: .continuous)
                 shape
                     .fill(theme.cardFill)
-                    .shadow(color: theme.cardShadow.opacity(hovered ? 0.12 : 0.06),
-                            radius: hovered ? 12 : 6, y: 3)
-                    .overlay {
-                        shape.strokeBorder(theme.cardBorder, lineWidth: 0.5)
-                    }
+                    .shadow(color: theme.cardShadow.opacity(hovered ? 0.10 : 0.05), radius: hovered ? 10 : 5, y: 2)
+                    .overlay { shape.strokeBorder(borderColor, lineWidth: 0.5) }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .modifier(JobCardGlassModifier(hovered: hovered))
-        .scaleEffect(hovered ? 1.005 : 1.0)
-        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: hovered)
+        .animation(.easeOut(duration: 0.18), value: hovered)
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: job.isEditable)
         .onHover { hovered = $0 }
-
         .sheet(isPresented: $showCookies) {
             CookiesSheet(job: job)
                 .onDisappear { DownloadService.shared.refetchMetadata(for: job) }
@@ -212,7 +119,184 @@ struct JobCard: View {
                           thumbnail: job.meta?.thumbnail ?? "",
                           format: job.format)
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.78), value: job.hasURL)
+        .sheet(isPresented: $showLog) { FullLogSheet(log: job.log) }
+        .animation(.spring(response: 0.3, dampingFraction: 0.82), value: job.hasURL)
+    }
+
+    private var borderColor: Color {
+        if job.isFailed { return Color.red.opacity(0.35) }
+        if hovered { return Color.accentColor.opacity(0.25) }
+        return Color(.separatorColor).opacity(0.35)
+    }
+
+    private var cardDivider: some View {
+        Rectangle().fill(Color.primary.opacity(0.07)).frame(height: 0.5)
+    }
+
+    // MARK: Top row
+
+    private var topRow: some View {
+        HStack(spacing: 10) {
+            StatusIndicator(job: job)
+            URLInputField(job: job)
+            Spacer(minLength: 0)
+            HStack(spacing: 4) {
+                if job.hasURL { moreMenu }
+                if job.status.isActive || job.status.isPaused {
+                    IconButton(systemImage: "stop.fill", tint: .red, tooltip: "Cancel Download") {
+                        job.cancel()
+                        Haptics.tap()
+                    }
+                }
+                DownloadButton(job: job)
+                if job.status.isDone || job.status == .cancelled || queue.jobs.count > 1 || job.hasURL {
+                    IconButton(systemImage: "xmark", tint: nil,
+                               tooltip: job.status.isTerminal ? "Dismiss" : "Remove") {
+                        removeOrReset()
+                    }
+                }
+            }
+        }
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            if job.status == .idle {
+                Button {
+                    WatchLaterStore.shared.add(url: job.url,
+                        title: job.meta?.title ?? "",
+                        thumbnail: job.meta?.thumbnail ?? "",
+                        format: job.format,
+                        isPlaylist: DownloadJob.looksLikePlaylist(job.url) && !DownloadService.isSoopOrAfreecaURL(job.url))
+                    queue.remove(job)
+                } label: { Label("Save to Watch Later", systemImage: "bookmark") }
+                Button { showSchedule = true } label: { Label("Schedule Download…", systemImage: "alarm") }
+                Divider()
+            }
+            if case .done(let url) = job.status {
+                Button { NSWorkspace.shared.open(url) } label: { Label("Open", systemImage: "play.rectangle") }
+                Button { NSWorkspace.shared.activateFileViewerSelecting([url]) } label: {
+                    Label("Show in Finder", systemImage: "folder")
+                }
+                Divider()
+            }
+            Button { showCookies = true } label: {
+                Label(job.hasCookies ? "Edit Sign-in Cookies…" : "Add Sign-in Cookies…",
+                      systemImage: job.hasCookies ? "key.fill" : "key")
+            }
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(job.url, forType: .string)
+            } label: { Label("Copy Link", systemImage: "link") }
+            if !job.log.isEmpty {
+                Button { showLog = true } label: { Label("Show Log", systemImage: "doc.text.magnifyingglass") }
+            }
+        } label: {
+            Image(systemName: job.hasCookies ? "ellipsis.circle.fill" : "ellipsis.circle")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(job.hasCookies ? Color.orange : Color.secondary)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
+        .compactMenuStyle()
+        .help(job.hasCookies ? "More (sign-in cookies added)" : "More")
+    }
+
+    private func removeOrReset() {
+        if queue.jobs.count > 1 || job.hasURL {
+            queue.remove(job)
+        } else {
+            job.reset()
+            job.url = ""
+            job.meta = nil
+            job.metaState = .idle
+            job.thumbnailLoaded = false
+            job.selectedVideoFormatId = ""
+            job.selectedAudioFormatId = ""
+        }
+    }
+
+    // MARK: Progress
+
+    private var progressTint: Color {
+        switch job.status {
+        case .done:    return .green
+        case .paused:  return .orange
+        case .merging: return .purple
+        default:       return .accentColor
+        }
+    }
+
+    private var progressSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ThinProgressBar(progress: job.status.progress, tint: progressTint, height: 4)
+            HStack(spacing: 8) {
+                Text(job.statusDetail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(job.status.isDone ? Color.green : Color.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if job.status.isActive, let size = job.sizeLabel {
+                    Text(size)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                }
+                if job.status.isActive && job.speedHistory.count > 2 {
+                    SpeedSparkline(samples: job.speedHistory)
+                }
+            }
+        }
+    }
+
+    // MARK: Failure
+
+    private var failureFooter: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(.red)
+                .padding(.top, 1)
+            Text(failureMessage)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .textSelection(.enabled)
+            Spacer(minLength: 8)
+            if !job.log.isEmpty {
+                Button("Show Log") { showLog = true }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(Color.red.opacity(0.06))
+    }
+
+    private var failureMessage: String {
+        if case .failed(let msg) = job.status {
+            let m = msg.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !m.isEmpty { return m }
+        }
+        if let err = job.log.last(where: { $0.kind == .error })?.text { return err }
+        return "The download didn't finish. Try again, or check the log for details."
+    }
+}
+
+// Liquid Glass for job cards — applied on the card content, not a detached background shape
+struct JobCardGlassModifier: ViewModifier {
+    let hovered: Bool
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.glassEffect(
+                .regular.interactive(hovered),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+        } else {
+            content
+        }
     }
 }
 
@@ -221,48 +305,57 @@ struct JobCard: View {
 struct MetadataHeaderView: View {
     let meta: VideoMeta
     @ObservedObject var job: DownloadJob
-    @ObservedObject private var settings = SettingsManager.shared
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Thumbnail
+        HStack(spacing: 14) {
             if !meta.thumbnail.isEmpty {
-                AsyncImage(url: URL(string: meta.thumbnail)) { phase in
-                    switch phase {
-                    case .success(let img):
-                        img.resizable().aspectRatio(contentMode: .fill)
-                            .frame(width: 100, height: 58)
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    default:
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Color.primary.opacity(0.07))
-                            .frame(width: 100, height: 58)
+                CachedThumb(
+                    urlString: meta.thumbnail, width: 112, height: 63, radius: 8,
+                    placeholder: AnyView(
+                        RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.07))
                             .overlay(Image(systemName: "photo").foregroundStyle(.tertiary))
-                    }
-                }
-                .frame(width: 100, height: 58)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(meta.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(2)
-                    .foregroundStyle(.primary.opacity(0.85))
-
-                HStack(spacing: 8) {
+                    )
+                )
+                .overlay(alignment: .bottomTrailing) {
                     if !meta.duration.isEmpty {
-                        Label(meta.duration, systemImage: "clock")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
-                    if meta.hasSubs {
-                        Label("Subtitles", systemImage: "captions.bubble")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                        Text(meta.duration)
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4).padding(.vertical, 1.5)
+                            .background(RoundedRectangle(cornerRadius: 3).fill(Color.black.opacity(0.7)))
+                            .padding(4)
                     }
                 }
             }
-            Spacer()
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(meta.title)
+                    .font(.system(size: 13.5, weight: .semibold))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+
+                HStack(spacing: 6) {
+                    Text(YoinkFormat.host(job.url))
+                    if meta.thumbnail.isEmpty && !meta.duration.isEmpty {
+                        Text("·")
+                        Text(meta.duration).monospacedDigit()
+                    }
+                    if !meta.chapters.isEmpty {
+                        Text("·")
+                        Text("\(meta.chapters.count) chapters")
+                    }
+                    if meta.hasSubs || !meta.availableSubLangs.isEmpty {
+                        Text("·")
+                        Text("Subtitles")
+                    }
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+            Spacer(minLength: 0)
         }
     }
 }
@@ -364,13 +457,15 @@ struct URLInputField: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if let icon = siteIcon {
-                Text(icon).font(.system(size: 13)).foregroundStyle(.secondary.opacity(0.6))
-                    .transition(.scale.combined(with: .opacity))
-                    .animation(.spring(response: 0.2), value: icon)
-            }
-            TextField("Paste URL - YouTube, Twitch, Twitter, SoundCloud, Vimeo…", text: $job.url)
+            Image(systemName: YoinkFormat.siteSymbol(job.url))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(job.hasURL ? Color.accentColor : Color.secondary.opacity(0.6))
+                .frame(width: 16)
+                .animation(.easeOut(duration: 0.15), value: job.hasURL)
+            TextField("", text: $job.url,
+                      prompt: Text("Paste a link — YouTube, Twitch, Vimeo, SoundCloud and 1000+ more"))
                 .textFieldStyle(.plain).font(.system(size: 13.5))
+                .disabled(!job.isEditable)
                 .onAppear {
                     // When a new card is created with a URL already set (e.g. ⌘N then paste,
                     // or programmatic addJob(url:)), onChange never fires because the value
@@ -436,194 +531,89 @@ struct URLInputField: View {
                 .background(.orange.opacity(0.1))
                 .clipShape(Capsule())
                 .transition(.scale(scale: 0.85).combined(with: .opacity))
-            } else if job.status != .idle, job.status != .cancelled {
-                StatusBadge(job: job).transition(.scale(scale: 0.85).combined(with: .opacity))
             }
         }
-        .animation(.spring(response: 0.22), value: job.status.shortLabel)
-    }
-
-    var siteIcon: String? {
-        let u = job.url.lowercased()
-        if u.contains("youtube.com") || u.contains("youtu.be") { return "▶" }
-        if u.contains("twitch.tv")                              { return "◉" }
-        if u.contains("twitter.com") || u.contains("x.com")    { return "𝕏" }
-        if u.contains("soundcloud.com")                         { return "♫" }
-        if u.contains("vimeo.com")                              { return "◈" }
-        if u.contains("instagram.com")                          { return "⊡" }
-        if u.contains("tiktok.com")                             { return "♪" }
-        if u.contains("reddit.com")                             { return "⊕" }
-        if u.hasPrefix("http")                                  { return "⬡" }
-        return nil
     }
 }
 
-// MARK: - Real Format Picker (video + audio independently)
+// MARK: - Real Format Picker (video + audio track menus)
 
 struct RealFormatPicker: View {
     @ObservedObject var job: DownloadJob
     let meta: VideoMeta
-
-    // "Best" sentinel - empty string means use yt-dlp's bestvideo/bestaudio
-    private let bestVideoId = ""
-    private let bestAudioId = ""
-
-    var selectedVideo: String {
-        job.selectedVideoFormatId.isEmpty ? bestVideoId : job.selectedVideoFormatId
-    }
-    var selectedAudio: String {
-        job.selectedAudioFormatId.isEmpty ? bestAudioId : job.selectedAudioFormatId
-    }
+    /// Audio-only mode shows just the audio track menu.
+    var audioOnly: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Video track
-            HStack(alignment: .center, spacing: 0) {
-                OptionLabel(icon: "film", text: "Video")
-                Menu {
-                    Button { job.selectedVideoFormatId = "" } label: {
-                        HStack {
-                            Text("Best available")
-                            if job.selectedVideoFormatId.isEmpty { Spacer(); Image(systemName: "checkmark") }
-                        }
-                    }
-                    Divider()
-                    ForEach(meta.videoFormats) { fmt in
-                        Button { job.selectedVideoFormatId = fmt.id } label: {
-                            HStack {
-                                Text(fmt.label)
-                                if job.selectedVideoFormatId == fmt.id { Spacer(); Image(systemName: "checkmark") }
-                            }
-                        }
-                    }
-                    Divider()
-                    // Audio-only modes
-                    Button { job.selectedVideoFormatId = "audio"; job.selectedAudioFormatId = "" } label: {
-                        HStack {
-                            Text("Audio only - best")
-                            if job.selectedVideoFormatId == "audio" { Spacer(); Image(systemName: "checkmark") }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        if job.selectedVideoFormatId == "audio" {
-                            Text("Audio only").font(.system(size: 12, weight: .medium))
-                        } else if job.selectedVideoFormatId.isEmpty {
-                            Text("Best available").font(.system(size: 12, weight: .medium))
-                            if let best = meta.videoFormats.first, let h = best.height {
-                                Text("(\(h)p)").font(.system(size: 11)).foregroundStyle(.secondary)
-                            }
-                            if let best = meta.videoFormats.first, let fs = best.filesize {
-                                Text(ByteCountFormatter.string(fromByteCount: fs, countStyle: .file))
-                                    .font(.system(size: 11)).foregroundStyle(.secondary)
-                            }
-                        } else if let fmt = meta.videoFormats.first(where: { $0.id == job.selectedVideoFormatId }) {
-                            Text("\(fmt.height.map { "\($0)p" } ?? fmt.id)")
-                                .font(.system(size: 12, weight: .medium))
-                            Text("· \(fmt.ext.uppercased())").font(.system(size: 11)).foregroundStyle(.secondary)
-                            if let fs = fmt.filesize {
-                                Text(ByteCountFormatter.string(fromByteCount: fs, countStyle: .file))
-                                    .font(.system(size: 11)).foregroundStyle(.secondary)
-                            }
-                        }
-                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 9))
-                    }
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(Color.primary.opacity(0.05))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
-                    .overlay(RoundedRectangle(cornerRadius: 7)
-                        .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
-                }
-                .buttonStyle(.plain)
-                Spacer()
-            }
-
-            // Audio track (only shown when downloading video, not audio-only mode)
-            if job.selectedVideoFormatId != "audio" {
-                HStack(alignment: .center, spacing: 0) {
-                    OptionLabel(icon: "waveform", text: "Audio")
-                    Menu {
-                        Button { job.selectedAudioFormatId = "" } label: {
-                            HStack {
-                                Text("Best available")
-                                if job.selectedAudioFormatId.isEmpty { Spacer(); Image(systemName: "checkmark") }
-                            }
-                        }
-                        Divider()
-                        ForEach(meta.audioFormats) { fmt in
-                            Button { job.selectedAudioFormatId = fmt.id } label: {
-                                HStack {
-                                    Text(fmt.label)
-                                    if job.selectedAudioFormatId == fmt.id { Spacer(); Image(systemName: "checkmark") }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            if job.selectedAudioFormatId.isEmpty {
-                                Text("Best available").font(.system(size: 12, weight: .medium))
-                                if let best = meta.audioFormats.first {
-                                    Text("(\(best.acodec.uppercased()))").font(.system(size: 11)).foregroundStyle(.secondary)
-                                }
-                                if let best = meta.audioFormats.first, let fs = best.filesize {
-                                    Text(ByteCountFormatter.string(fromByteCount: fs, countStyle: .file))
-                                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                                }
-                            } else if let fmt = meta.audioFormats.first(where: { $0.id == job.selectedAudioFormatId }) {
-                                Text(fmt.abr.map { "\(Int($0))kbps" } ?? fmt.id)
-                                    .font(.system(size: 12, weight: .medium))
-                                Text("· \(fmt.acodec.uppercased())").font(.system(size: 11)).foregroundStyle(.secondary)
-                                if let fs = fmt.filesize {
-                                    Text(ByteCountFormatter.string(fromByteCount: fs, countStyle: .file))
-                                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                                }
-                            }
-                            Image(systemName: "chevron.up.chevron.down").font(.system(size: 9))
-                        }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(Color.primary.opacity(0.05))
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                        .overlay(RoundedRectangle(cornerRadius: 7)
-                            .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
-                }
-            }
+        HStack(spacing: 6) {
+            if !audioOnly { videoMenu }
+            audioMenu
         }
     }
-}
 
-struct StatusBadge: View {
-    @ObservedObject var job: DownloadJob
-    var body: some View {
-        Text(job.status.shortLabel)
-            .font(.system(size: 10.5, weight: .medium, design: .rounded))
-            .foregroundStyle(job.status.accentColor)
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(job.status.accentColor.opacity(0.1)).clipShape(Capsule())
-    }
-}
-
-// MARK: - Progress Bar
-
-struct JobProgressBar: View {
-    @ObservedObject var job: DownloadJob
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Color.primary.opacity(0.05)
-                Rectangle()
-                    .fill(job.status.isDone
-                          ? LinearGradient(colors: [.green.opacity(0.8), .green], startPoint: .leading, endPoint: .trailing)
-                          : LinearGradient(colors: [Color.accentColor.opacity(0.7), Color.accentColor], startPoint: .leading, endPoint: .trailing))
-                    .frame(width: max(0, geo.size.width * job.status.progress))
-                    .animation(.spring(response: 0.4, dampingFraction: 0.82), value: job.status.progress)
-            }
+    private var videoTitle: String {
+        if job.selectedVideoFormatId.isEmpty || job.selectedVideoFormatId == "audio" {
+            if let h = meta.videoFormats.first?.height { return "Best · \(h)p" }
+            return "Best"
         }
-        .frame(height: 2)
+        if let f = meta.videoFormats.first(where: { $0.id == job.selectedVideoFormatId }) {
+            var s = f.height.map { "\($0)p" } ?? f.id
+            if let fps = f.fps, fps > 30 { s += "\(Int(fps))" }
+            return s + " · " + f.ext.uppercased()
+        }
+        return "Best"
+    }
+
+    private var audioTitle: String {
+        if job.selectedAudioFormatId.isEmpty {
+            if let a = meta.audioFormats.first { return "Best audio · \(a.acodec.uppercased())" }
+            return "Best audio"
+        }
+        if let f = meta.audioFormats.first(where: { $0.id == job.selectedAudioFormatId }) {
+            return (f.abr.map { "\(Int($0)) kbps" } ?? f.id) + " · " + f.acodec.uppercased()
+        }
+        return "Best audio"
+    }
+
+    private var videoMenu: some View {
+        Menu {
+            Button { job.selectedVideoFormatId = "" } label: {
+                checkLabel("Best Available", job.selectedVideoFormatId.isEmpty)
+            }
+            Divider()
+            ForEach(meta.videoFormats) { fmt in
+                Button { job.selectedVideoFormatId = fmt.id } label: {
+                    checkLabel(fmt.label, job.selectedVideoFormatId == fmt.id)
+                }
+            }
+        } label: {
+            CompactMenuLabel(title: videoTitle, icon: "film")
+        }
+        .compactMenuStyle()
+        .help("Video quality")
+    }
+
+    private var audioMenu: some View {
+        Menu {
+            Button { job.selectedAudioFormatId = "" } label: {
+                checkLabel("Best Available", job.selectedAudioFormatId.isEmpty)
+            }
+            if !meta.audioFormats.isEmpty { Divider() }
+            ForEach(meta.audioFormats) { fmt in
+                Button { job.selectedAudioFormatId = fmt.id } label: {
+                    checkLabel(fmt.label, job.selectedAudioFormatId == fmt.id)
+                }
+            }
+        } label: {
+            CompactMenuLabel(title: audioTitle, icon: "waveform")
+        }
+        .compactMenuStyle()
+        .help("Audio track")
+    }
+
+    @ViewBuilder
+    private func checkLabel(_ title: String, _ checked: Bool) -> some View {
+        if checked { Label(title, systemImage: "checkmark") } else { Text(title) }
     }
 }
 
@@ -632,355 +622,303 @@ struct JobProgressBar: View {
 struct JobOptionsPanel: View {
     @ObservedObject var job: DownloadJob
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+    private var isAudioOnly: Bool { job.selectedVideoFormatId == "audio" || job.format.isAudio }
+    private var sponsorOn: Bool { job.sponsorBlockOverride ?? SettingsManager.shared.sponsorBlock }
 
-            // Audio quick toggle
-            HStack(alignment: .center, spacing: 0) {
-                OptionLabel(icon: "waveform", text: "Audio only")
-                let isAudioOnly = job.selectedVideoFormatId == "audio" || job.format.isAudio
-                Toggle(isOn: Binding(
-                    get: { isAudioOnly },
-                    set: { on in
-                        if on {
-                            if job.meta?.videoFormats.isEmpty == false {
-                                job.selectedVideoFormatId = "audio"
-                                job.selectedAudioFormatId = ""
-                            } else {
-                                job.format = .audioBest
-                            }
-                        } else {
-                            job.selectedVideoFormatId = ""
-                            job.selectedAudioFormatId = ""
-                            job.format = .best
-                        }
-                        Haptics.toggleOn()
-                    }
-                ).animation(.spring(response: 0.25))) {
-                    Text(isAudioOnly ? "Downloading audio only" : "Download audio track only")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                }
-                .toggleStyle(SlimToggleStyle())
-                Spacer()
-            }
-
-            if job.isTwitchURL && !job.twitchQualities.isEmpty {
-                // Twitch: show real qualities fetched from the M3U8 (Source, 1080p60, 720p30…)
-                HStack(alignment: .center, spacing: 0) {
-                    OptionLabel(icon: "film", text: "Quality")
-                    Picker("", selection: Binding(
-                        get: { job.selectedTwitchQuality?.id ?? job.twitchQualities.first?.id ?? "Source" },
-                        set: { newId in
-                            job.selectedTwitchQuality = job.twitchQualities.first { $0.id == newId }
-                        }
-                    )) {
-                        ForEach(job.twitchQualities) { q in
-                            Text(q.displayName).tag(q.id)
-                        }
-                    }
-                    .labelsHidden().pickerStyle(.menu).frame(maxWidth: 230)
-                    Spacer()
-                }
-            } else if let meta = job.meta, !meta.videoFormats.isEmpty {
-                // Real format picker - separate video track + audio track
-                RealFormatPicker(job: job, meta: meta)
-            } else {
-                HStack(alignment: .center, spacing: 0) {
-                    OptionLabel(icon: "film", text: "Format")
-                    Picker("", selection: $job.format) {
-                        ForEach(DownloadFormat.allCases) { fmt in
-                            Label(fmt.displayName, systemImage: fmt.icon).tag(fmt)
-                        }
-                    }
-                    .labelsHidden().pickerStyle(.menu).frame(maxWidth: 230)
-                    Spacer()
-                }
-            }
-
-            // Subtitles
-            HStack(alignment: .center, spacing: 0) {
-                OptionLabel(icon: "captions.bubble", text: "Subtitles")
-                Toggle(isOn: $job.downloadSubs.animation(.spring(response: 0.25))) {
-                    HStack(spacing: 6) {
-                        Text("Download subtitles")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                        if job.metaState == .fetching {
-                            ProgressView().scaleEffect(0.5).frame(width: 10, height: 10)
-                        } else if let langs = job.meta?.availableSubLangs, !langs.isEmpty {
-                            Text("\(langs.count) \(langs.count == 1 ? "lang" : "langs") available")
-                                .font(.system(size: 10, weight: .medium)).foregroundStyle(.green)
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(.green.opacity(0.1)).clipShape(Capsule())
-                        }
-                    }
-                }
-                .toggleStyle(SlimToggleStyle())
-                if job.downloadSubs {
-                    Spacer().frame(width: 12)
-                    if let langs = job.meta?.availableSubLangs, !langs.isEmpty {
-                        // Real language picker from --list-subs
-                        Menu {
-                            ForEach(langs, id: \.self) { lang in
-                                Button {
-                                    job.subLang = lang
-                                } label: {
-                                    HStack {
-                                        Text(lang)
-                                        if job.subLang == lang { Spacer(); Image(systemName: "checkmark") }
-                                    }
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 5) {
-                                Text(job.subLang.isEmpty ? (langs.first ?? "?") : job.subLang)
-                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.system(size: 9, weight: .medium))
-                            }
-                            .foregroundStyle(.primary)
-                            .padding(.horizontal, 9).padding(.vertical, 5)
-                            .background(Color.primary.opacity(0.05))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                            .overlay(RoundedRectangle(cornerRadius: 6)
-                                .strokeBorder(Color(.separatorColor).opacity(0.55), lineWidth: 0.5))
-                        }
-                        .buttonStyle(.plain)
-                        .onAppear {
-                            let fallback = langs
-                            DispatchQueue.main.async {
-                                if job.subLang.isEmpty || !fallback.contains(job.subLang),
-                                   let first = fallback.first { job.subLang = first }
-                            }
-                        }
-                        .onChange(of: langs) { newLangs in
-                            DispatchQueue.main.async {
-                                if job.subLang.isEmpty || !newLangs.contains(job.subLang),
-                                   let first = newLangs.first { job.subLang = first }
-                            }
-                        }
-                    } else if job.metaState == .fetching {
-                        Text("detecting…")
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
+    private var audioBinding: Binding<Bool> {
+        Binding(
+            get: { isAudioOnly },
+            set: { on in
+                guard on != isAudioOnly else { return }
+                if on {
+                    if job.meta?.videoFormats.isEmpty == false {
+                        job.selectedVideoFormatId = "audio"
+                        job.selectedAudioFormatId = ""
                     } else {
-                        Text("none found")
-                            .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        job.format = .audioBest
                     }
+                } else {
+                    job.selectedVideoFormatId = ""
+                    job.selectedAudioFormatId = ""
+                    job.format = .best
                 }
-                Spacer()
+                Haptics.tap()
+            }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Row 1 — what to download
+            HStack(spacing: 10) {
+                Picker("", selection: audioBinding) {
+                    Text("Video").tag(false)
+                    Text("Audio").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 132)
+
+                formatControls
+                Spacer(minLength: 0)
             }
 
-            // Segment
-            HStack(alignment: .top, spacing: 0) {
-                OptionLabel(icon: "scissors", text: "Segment").padding(.top, 1)
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle(isOn: $job.useSegment.animation(.spring(response: 0.25))) {
-                        Text("Download a specific range")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                    }
-                    .toggleStyle(SlimToggleStyle())
-
-                    if job.useSegment {
-                        VStack(alignment: .leading, spacing: 10) {
-
-                            // Mode toggle: Manual vs Chapters (only if video has chapters)
-                            if let chapters = job.meta?.chapters, !chapters.isEmpty {
-                                HStack(spacing: 0) {
-                                    ForEach([("scissors", "Start/End", DownloadJob.SegmentMode.manual),
-                                             ("list.bullet", "Chapters", DownloadJob.SegmentMode.chapters)],
-                                            id: \.1) { icon, label, mode in
-                                        let active = job.segmentMode == mode
-                                        Button {
-                                            withAnimation(.easeOut(duration: 0.15)) { job.segmentMode = mode }
-                                            Haptics.tap()
-                                        } label: {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: icon).font(.system(size: 9, weight: .medium))
-                                                Text(label).font(.system(size: 10.5, weight: .medium))
-                                            }
-                                            .padding(.horizontal, 10).padding(.vertical, 5)
-                                            .background(active ? Color.accentColor : Color.clear)
-                                            .foregroundStyle(active ? .white : .secondary)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                                .background(Color.primary.opacity(0.06))
-                                .clipShape(RoundedRectangle(cornerRadius: 7))
-                                .overlay(RoundedRectangle(cornerRadius: 7)
-                                    .strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5))
-                            }
-
-                            if job.segmentMode == .manual || (job.meta?.chapters.isEmpty ?? true) {
-                                // Manual start/end range
-                                HStack(alignment: .bottom, spacing: 14) {
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text("Start").font(.system(size: 10, weight: .medium)).foregroundStyle(.tertiary)
-                                        HMSInput(hours: $job.startH, minutes: $job.startM, seconds: $job.startS)
-                                    }
-                                    Text("→").font(.system(size: 13)).foregroundStyle(.tertiary).padding(.bottom, 7)
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        HStack(spacing: 6) {
-                                            Text("End").font(.system(size: 10, weight: .medium)).foregroundStyle(.tertiary)
-                                            if job.metaState == .fetching {
-                                                ProgressView().scaleEffect(0.5).frame(width: 10, height: 10)
-                                            }
-                                        }
-                                        HMSInput(hours: $job.endH, minutes: $job.endM, seconds: $job.endS,
-                                                 placeholders: job.videoDurationHMS)
-                                    }
-                                    if let meta = job.meta {
-                                        Text("/ \(meta.duration)")
-                                            .font(.system(size: 11, design: .monospaced))
-                                            .foregroundStyle(.tertiary).padding(.bottom, 7)
-                                    }
-                                    Spacer()
-                                }
-
-                                // Chapter quick-fill buttons (manual mode only)
-                                if let chapters = job.meta?.chapters, !chapters.isEmpty {
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text("Jump to Section")
-                                            .font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
-                                        ScrollView(.horizontal, showsIndicators: false) {
-                                            HStack(spacing: 5) {
-                                                ForEach(chapters) { ch in
-                                                    Button {
-                                                        job.startH = ch.startTime >= 3600 ? String(format: "%02d", ch.startTime/3600) : ""
-                                                        job.startM = String(format: "%02d", (ch.startTime%3600)/60)
-                                                        job.startS = String(format: "%02d", ch.startTime%60)
-                                                        job.endH   = ch.endTime >= 3600   ? String(format: "%02d", ch.endTime/3600)   : ""
-                                                        job.endM   = String(format: "%02d", (ch.endTime%3600)/60)
-                                                        job.endS   = String(format: "%02d", ch.endTime%60)
-                                                        Haptics.toggleOn()
-                                                    } label: {
-                                                        HStack(spacing: 4) {
-                                                            Text(ch.title)
-                                                                .font(.system(size: 10.5, weight: .medium))
-                                                                .lineLimit(1)
-                                                            Text(ch.duration)
-                                                                .font(.system(size: 9.5, design: .monospaced))
-                                                                .foregroundStyle(.secondary)
-                                                        }
-                                                        .foregroundStyle(Color.accentColor)
-                                                        .padding(.horizontal, 8).padding(.vertical, 4)
-                                                        .background(Color.accentColor.opacity(0.09))
-                                                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                                                        .overlay(RoundedRectangle(cornerRadius: 6)
-                                                            .strokeBorder(Color.accentColor.opacity(0.2), lineWidth: 0.5))
-                                                    }
-                                                    .buttonStyle(.plain)
-
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } else if let chapters = job.meta?.chapters, !chapters.isEmpty {
-                                // Chapter pick mode - multi-select list
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Select Chapters to Download")
-                                        .font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
-                                    VStack(spacing: 2) {
-                                        ForEach(chapters) { ch in
-                                            let sel = job.selectedChapters.contains(ch.id)
-                                            Button {
-                                                withAnimation(.easeOut(duration: 0.12)) {
-                                                    if sel { job.selectedChapters.remove(ch.id) }
-                                                    else   { job.selectedChapters.insert(ch.id) }
-                                                }
-                                                sel ? Haptics.toggleOff() : Haptics.toggleOn()
-                                            } label: {
-                                                HStack(spacing: 7) {
-                                                    Image(systemName: sel ? "checkmark.square.fill" : "square")
-                                                        .font(.system(size: 13))
-                                                        .foregroundStyle(sel ? Color.accentColor : Color.secondary.opacity(0.35))
-                                                    Text(ch.title)
-                                                        .font(.system(size: 11, weight: sel ? .medium : .regular))
-                                                        .foregroundStyle(sel ? .primary : .secondary)
-                                                        .lineLimit(1)
-                                                    Spacer()
-                                                    Text(ch.duration)
-                                                        .font(.system(size: 10, design: .monospaced))
-                                                        .foregroundStyle(.tertiary)
-                                                }
-                                                .padding(.horizontal, 8).padding(.vertical, 5)
-                                                .background(sel ? Color.accentColor.opacity(0.08) : Color.clear)
-                                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                                            }
-                                            .buttonStyle(.plain)
-                                        }
-                                    }
-                                    .padding(5)
-                                    .background(Color.primary.opacity(0.03))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                                    if chapters.count > 1 {
-                                        HStack {
-                                            Spacer()
-                                            let allSel = job.selectedChapters.count == chapters.count
-                                            Button(allSel ? "Deselect all" : "Select all") {
-                                                withAnimation(.easeOut(duration: 0.12)) {
-                                                    if allSel { job.selectedChapters.removeAll() }
-                                                    else { job.selectedChapters = Set(chapters.map(\.id)) }
-                                                }
-                                                Haptics.tap()
-                                            }
-                                            .buttonStyle(.plain)
-                                            .font(.system(size: 10, weight: .medium))
-                                            .foregroundStyle(Color.accentColor.opacity(0.8))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                    }
+            // Row 2 — extras, off by default
+            HStack(spacing: 6) {
+                OptionChip(title: "Subtitles", icon: "captions.bubble", isOn: job.downloadSubs,
+                           help: "Download subtitles alongside the video") {
+                    job.downloadSubs.toggle()
                 }
-                Spacer()
+                OptionChip(title: "Skip Sponsors", icon: "forward.end", isOn: sponsorOn,
+                           help: job.sponsorBlockOverride == nil
+                               ? "Cut sponsor segments with SponsorBlock (following your default)"
+                               : "Cut sponsor segments with SponsorBlock") {
+                    job.sponsorBlockOverride = !sponsorOn
+                }
+                OptionChip(title: "Clip", icon: "scissors", isOn: job.useSegment,
+                           help: "Download only part of the video") {
+                    job.useSegment.toggle()
+                }
+                if job.sponsorBlockOverride != nil && job.sponsorBlockOverride != SettingsManager.shared.sponsorBlock {
+                    Text("Overrides your default")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.tertiary)
+                        .padding(.leading, 4)
+                }
+                Spacer(minLength: 0)
             }
 
-            // SponsorBlock
-            HStack(alignment: .center, spacing: 0) {
-                OptionLabel(icon: "scissors.badge.ellipsis", text: "SponsorBlock")
-                Toggle(isOn: Binding(
-                    get: { job.sponsorBlockOverride ?? SettingsManager.shared.sponsorBlock },
-                    set: { job.sponsorBlockOverride = $0 }
-                ).animation(.spring(response: 0.25))) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Skip sponsors automatically")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                        if job.sponsorBlockOverride == nil {
-                            Text("using global setting")
-                                .font(.system(size: 10)).foregroundStyle(.tertiary)
+            if job.downloadSubs {
+                subtitleRow
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            if job.useSegment {
+                SegmentEditor(job: job)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.spring(response: 0.28, dampingFraction: 0.88), value: job.downloadSubs)
+        .animation(.spring(response: 0.28, dampingFraction: 0.88), value: job.useSegment)
+        .animation(.spring(response: 0.28, dampingFraction: 0.88), value: isAudioOnly)
+    }
+
+    @ViewBuilder
+    private var formatControls: some View {
+        if job.isTwitchURL && !job.twitchQualities.isEmpty && !isAudioOnly {
+            // Twitch: real qualities fetched from the M3U8 (Source, 1080p60, 720p30…)
+            Menu {
+                ForEach(job.twitchQualities) { q in
+                    Button { job.selectedTwitchQuality = q } label: {
+                        let current = job.selectedTwitchQuality?.id ?? job.twitchQualities.first?.id
+                        if current == q.id { Label(q.displayName, systemImage: "checkmark") } else { Text(q.displayName) }
+                    }
+                }
+            } label: {
+                CompactMenuLabel(title: (job.selectedTwitchQuality ?? job.twitchQualities.first)?.displayName ?? "Source",
+                                 icon: "film")
+            }
+            .compactMenuStyle()
+            .help("Stream quality")
+        } else if let meta = job.meta, !meta.videoFormats.isEmpty || (isAudioOnly && !meta.audioFormats.isEmpty) {
+            RealFormatPicker(job: job, meta: meta, audioOnly: isAudioOnly)
+        } else {
+            // No format list (still loading, or the site doesn't expose one)
+            Menu {
+                ForEach(DownloadFormat.allCases.filter { $0.isAudio == isAudioOnly }) { fmt in
+                    Button { job.format = fmt } label: {
+                        if job.format == fmt { Label(fmt.displayName, systemImage: "checkmark") } else { Text(fmt.displayName) }
+                    }
+                }
+            } label: {
+                CompactMenuLabel(title: job.format.displayName, icon: isAudioOnly ? "waveform" : "film")
+            }
+            .compactMenuStyle()
+            .help("Format")
+        }
+    }
+
+    private var subtitleRow: some View {
+        HStack(spacing: 8) {
+            Text("Subtitle language")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+            if let langs = job.meta?.availableSubLangs, !langs.isEmpty {
+                Menu {
+                    ForEach(langs, id: \.self) { lang in
+                        Button { job.subLang = lang } label: {
+                            if job.subLang == lang { Label(lang, systemImage: "checkmark") } else { Text(lang) }
                         }
                     }
+                } label: {
+                    CompactMenuLabel(title: job.subLang.isEmpty ? (langs.first ?? "?") : job.subLang, monospaced: true)
                 }
-                .toggleStyle(SlimToggleStyle())
-                // Reset to inherit global
-                if job.sponsorBlockOverride != nil {
-                    Button { job.sponsorBlockOverride = nil } label: {
-                        Image(systemName: "arrow.uturn.backward")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Reset to global setting")
-                    .padding(.leading, 6)
-                }
-                Spacer()
+                .compactMenuStyle()
+                .onAppear { pickLanguage(langs) }
+                .onChange(of: langs) { pickLanguage($0) }
+                Text("\(langs.count) available")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.tertiary)
+            } else if job.metaState == .fetching {
+                ProgressView().controlSize(.small)
+            } else {
+                Text("\(job.subLang.isEmpty ? "en" : job.subLang) · used if the video has it")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
             }
+            Spacer(minLength: 0)
+        }
+    }
 
+    private func pickLanguage(_ langs: [String]) {
+        DispatchQueue.main.async {
+            guard job.subLang.isEmpty || !langs.contains(job.subLang) else { return }
+            let preferred = SettingsManager.shared.defaultSubLang
+            job.subLang = langs.contains(preferred) ? preferred : (langs.first ?? "")
         }
     }
 }
 
-struct OptionLabel: View {
-    let icon: String; let text: String
+// MARK: - Segment Editor (clip by time or by chapter)
+
+struct SegmentEditor: View {
+    @ObservedObject var job: DownloadJob
+
+    private var chapters: [VideoChapter] { job.meta?.chapters ?? [] }
+
     var body: some View {
-        Label(text, systemImage: icon)
-            .font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
-            .frame(width: 110, alignment: .leading)
-            .lineLimit(1).fixedSize()
+        VStack(alignment: .leading, spacing: 10) {
+            if !chapters.isEmpty {
+                Picker("", selection: Binding(
+                    get: { job.segmentMode == .chapters },
+                    set: { job.segmentMode = $0 ? .chapters : .manual; Haptics.tap() }
+                )) {
+                    Text("Time Range").tag(false)
+                    Text("Chapters").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 200)
+            }
+
+            if job.segmentMode == .manual || chapters.isEmpty {
+                manualRange
+                if !chapters.isEmpty { chapterJumps }
+            } else {
+                chapterPicker
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.035)))
+    }
+
+    private var manualRange: some View {
+        HStack(alignment: .bottom, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Start").font(.system(size: 10.5, weight: .medium)).foregroundStyle(.secondary)
+                HMSInput(hours: $job.startH, minutes: $job.startM, seconds: $job.startS)
+            }
+            Image(systemName: "arrow.right")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.tertiary)
+                .padding(.bottom, 9)
+            VStack(alignment: .leading, spacing: 5) {
+                Text("End").font(.system(size: 10.5, weight: .medium)).foregroundStyle(.secondary)
+                HMSInput(hours: $job.endH, minutes: $job.endM, seconds: $job.endS,
+                         placeholders: job.videoDurationHMS)
+            }
+            if let meta = job.meta, !meta.duration.isEmpty {
+                Text("of \(meta.duration)")
+                    .font(.system(size: 11))
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+                    .padding(.bottom, 9)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var chapterJumps: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Fill from a chapter")
+                .font(.system(size: 10.5, weight: .medium)).foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
+                    ForEach(chapters) { ch in
+                        Button {
+                            job.startH = ch.startTime >= 3600 ? String(format: "%02d", ch.startTime/3600) : ""
+                            job.startM = String(format: "%02d", (ch.startTime%3600)/60)
+                            job.startS = String(format: "%02d", ch.startTime%60)
+                            job.endH   = ch.endTime >= 3600   ? String(format: "%02d", ch.endTime/3600)   : ""
+                            job.endM   = String(format: "%02d", (ch.endTime%3600)/60)
+                            job.endS   = String(format: "%02d", ch.endTime%60)
+                            Haptics.toggleOn()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(ch.title).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                                Text(ch.duration).font(.system(size: 10)).monospacedDigit().foregroundStyle(.secondary)
+                            }
+                            .foregroundStyle(Color.accentColor)
+                            .padding(.horizontal, 9).frame(height: 24)
+                            .background(Capsule().fill(Color.accentColor.opacity(0.1)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private var chapterPicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("\(job.selectedChapters.count) of \(chapters.count) chapters")
+                    .font(.system(size: 10.5, weight: .medium)).foregroundStyle(.secondary)
+                Spacer()
+                if chapters.count > 1 {
+                    let allSel = job.selectedChapters.count == chapters.count
+                    Button(allSel ? "Select None" : "Select All") {
+                        if allSel { job.selectedChapters.removeAll() }
+                        else { job.selectedChapters = Set(chapters.map(\.id)) }
+                        Haptics.tap()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+                }
+            }
+            VStack(spacing: 1) {
+                ForEach(chapters) { ch in
+                    let sel = job.selectedChapters.contains(ch.id)
+                    Button {
+                        if sel { job.selectedChapters.remove(ch.id) } else { job.selectedChapters.insert(ch.id) }
+                        sel ? Haptics.toggleOff() : Haptics.toggleOn()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: sel ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 13))
+                                .foregroundStyle(sel ? Color.accentColor : Color.secondary.opacity(0.5))
+                            Text(ch.title)
+                                .font(.system(size: 12))
+                                .foregroundStyle(sel ? .primary : .secondary)
+                                .lineLimit(1)
+                            Spacer()
+                            Text(ch.startHMS)
+                                .font(.system(size: 10.5)).monospacedDigit()
+                                .foregroundStyle(.tertiary)
+                            Text(ch.duration)
+                                .font(.system(size: 10.5)).monospacedDigit()
+                                .foregroundStyle(.secondary)
+                                .frame(width: 48, alignment: .trailing)
+                        }
+                        .padding(.horizontal, 8).frame(height: 28)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(sel ? Color.accentColor.opacity(0.08) : .clear))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
     }
 }
 
@@ -1149,86 +1087,6 @@ struct AuthNudgeBanner: View {
         .sheet(isPresented: $showCookies) {
             CookiesSheet(job: job)
                 .onDisappear { DownloadService.shared.refetchMetadata(for: job) }
-        }
-    }
-}
-
-// MARK: - Log View
-
-struct JobLogView: View {
-    let log: [LogLine]
-    @State private var showFullLog = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Mini inline log - last 6 lines
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(log.suffix(40)) { line in
-                            Text(line.text)
-                                .font(.system(size: 10.5, design: .monospaced))
-                                .foregroundStyle(logColor(line.kind))
-                                .lineLimit(1).truncationMode(.tail).id(line.id)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 72)
-                .onChange(of: log.count) { _ in
-                    if let last = log.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
-                }
-            }
-
-            // Toolbar: "View all logs" + "Copy"
-            HStack(spacing: 8) {
-                Button {
-                    showFullLog = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "doc.text.magnifyingglass").font(.system(size: 9))
-                        Text("View all logs (\(log.count))")
-                            .font(.system(size: 10, weight: .medium))
-                    }
-                    .foregroundStyle(Color.accentColor.opacity(0.85))
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Button {
-                    let text = log.map(\.text).joined(separator: "\n")
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
-                    Haptics.success()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "doc.on.doc").font(.system(size: 9))
-                        Text("Copy logs").font(.system(size: 10, weight: .medium))
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Copy all log output to clipboard")
-            }
-            .padding(.top, 5)
-        }
-        .padding(10)
-        .background(Color.primary.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .sheet(isPresented: $showFullLog) {
-            FullLogSheet(log: log)
-        }
-    }
-
-    func logColor(_ kind: LogLine.Kind) -> Color {
-        switch kind {
-        case .command:  return .secondary.opacity(0.4)
-        case .info:     return .secondary.opacity(0.72)
-        case .progress: return Color.accentColor
-        case .success:  return .green
-        case .warning:  return .orange
-        case .error:    return Color(red: 0.85, green: 0.35, blue: 0.35)
         }
     }
 }
@@ -1412,7 +1270,7 @@ struct DownloadButton: View {
                         .padding(.horizontal, 13).frame(height: 30)
                         .background {
                             let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            if #available(macOS 26.0, *) {
+                            if #available(macOS 26.0, *), !isPrimary {
                                 shape.fill(btnBg)
                                     .overlay {
                                         shape.strokeBorder(btnBorder, lineWidth: 0.5)
@@ -1468,7 +1326,7 @@ struct DownloadButton: View {
         case .fetching:                 return "ellipsis"
         case .downloading, .merging:    return "pause.fill"
         case .paused:                   return "play.fill"
-        case .done:                     return "folder"
+        case .done:                     return "magnifyingglass"
         case .failed:                   return "arrow.counterclockwise"
         }
     }
@@ -1479,19 +1337,25 @@ struct DownloadButton: View {
         case .downloading(let p):       return "\(Int(p*100))%"
         case .paused(let p):            return "\(Int(p*100))%"
         case .merging:                  return "Merging…"
-        case .done:                     return "Reveal"
+        case .done:                     return "Show File"
         case .failed:                   return job.retryCount > 0 ? "Retry (\(job.retryCount))" : "Retry"
         }
     }
+    /// Ready to start: the one accent-filled control on the card.
+    private var isPrimary: Bool {
+        (job.status == .idle || job.status == .cancelled) && job.hasURL
+    }
     var btnFg: Color {
+        if isPrimary { return .white }
         switch job.status {
         case .done:    return .green
         case .failed:  return .red
         case .fetching, .merging: return .secondary
-        default:       return .primary.opacity(0.75)
+        default:       return .primary.opacity(0.6)
         }
     }
     var btnBg: Color {
+        if isPrimary { return .accentColor }
         switch job.status {
         case .done:   return .green.opacity(0.1)
         case .failed: return .red.opacity(0.08)
@@ -1499,10 +1363,11 @@ struct DownloadButton: View {
         }
     }
     var btnBorder: Color {
+        if isPrimary { return .clear }
         switch job.status {
         case .done:   return .green.opacity(0.25)
         case .failed: return .red.opacity(0.2)
-        default:      return Color(.separatorColor).opacity(0.8)
+        default:      return Color(.separatorColor).opacity(0.6)
         }
     }
     var ringTrackColor: Color { Color.primary.opacity(0.08) }
