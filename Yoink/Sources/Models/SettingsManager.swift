@@ -169,10 +169,26 @@ enum AppMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var shortLabel: String {
         switch self {
-        case .video:      return "Video"
+        case .video:      return "Downloads"
         case .playlist:   return "Playlist"
         case .watchLater: return "Watch Later"
         case .history:    return "History"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .video:      return "arrow.down.circle"
+        case .playlist:   return "list.bullet.rectangle"
+        case .watchLater: return "bookmark"
+        case .history:    return "clock.arrow.circlepath"
+        }
+    }
+    var selectedIcon: String {
+        switch self {
+        case .video:      return "arrow.down.circle.fill"
+        case .playlist:   return "list.bullet.rectangle.fill"
+        case .watchLater: return "bookmark.fill"
+        case .history:    return "clock.arrow.circlepath"
         }
     }
 }

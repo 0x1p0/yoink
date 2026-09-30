@@ -285,6 +285,7 @@ struct YoinkApp: App {
                 .environmentObject(queue)
                 .environmentObject(theme)
                 .environmentObject(settings)
+                .applyColorScheme(theme.current.colorScheme)
                 .accentColor(theme.accentColor)
         } label: {
             MenuBarProgressLabel(queue: queue, settings: settings)

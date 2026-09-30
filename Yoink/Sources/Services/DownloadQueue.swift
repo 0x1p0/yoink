@@ -140,7 +140,8 @@ final class DownloadQueue: ObservableObject {
     func downloadAll() {
         ensureOutputDir()
         let limit = SettingsManager.shared.concurrentLimit.rawValue  // 0 = unlimited
-        let pending = jobs.filter { $0.hasURL && !$0.status.isActive }
+        // Only jobs that haven't run yet (or were cancelled) — never restart finished or paused ones
+        let pending = jobs.filter { $0.hasURL && ($0.status == .idle || $0.status == .cancelled) }
         let activeCount = jobs.filter { $0.status.isActive }.count
         let slotsAvailable = limit == 0 ? pending.count : max(0, limit - activeCount)
         let toStart = limit == 0 ? pending : Array(pending.prefix(slotsAvailable))

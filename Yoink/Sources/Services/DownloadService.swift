@@ -718,7 +718,7 @@ final class DownloadService: ObservableObject {
         guard job.hasURL else { return }
         // Apply per-site format override if the user hasn't picked a specific format for this job
         let sm = SettingsManager.shared
-        if job.format == .best && job.selectedVideoFormatId.isEmpty && job.selectedAudioFormatId.isEmpty {
+        if job.format == sm.defaultFormat && job.selectedVideoFormatId.isEmpty && job.selectedAudioFormatId.isEmpty {
             if let siteOverride = sm.siteFormat(for: job.url) {
                 job.format = siteOverride
             }

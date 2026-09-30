@@ -118,41 +118,14 @@ struct HistoryView: View {
         VStack(spacing: 0) {
             // ── Toolbar ──────────────────────────────────────────────────
             HStack(spacing: 10) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                    TextField("Search history…", text: $search)
-                        .textFieldStyle(.plain).font(.system(size: 13))
-                    if !search.isEmpty {
-                        Button { search = "" } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }.buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 10).padding(.vertical, 7)
-                .background {
-                    let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    if #available(macOS 26.0, *) {
-                        shape
-                            .fill(Color.primary.opacity(0.05))
-                            .overlay {
-                                shape.strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5)
-                            }
-                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                            .allowsHitTesting(false)
-                    } else {
-                        shape
-                            .fill(Color.primary.opacity(0.06))
-                            .overlay {
-                                shape.strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5)
-                            }
-                            .allowsHitTesting(false)
-                    }
-                }
+                YoinkSearchField(prompt: "Search history", text: $search)
 
-                Text("\(filtered.count) item\(filtered.count == 1 ? "" : "s")")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(filtered.count == store.entries.count
+                     ? "\(store.entries.count) download\(store.entries.count == 1 ? "" : "s")"
+                     : "\(filtered.count) of \(store.entries.count)")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
 
                 Spacer()
 
@@ -160,73 +133,57 @@ struct HistoryView: View {
                     Button {
                         confirmRemoveMissing = true
                     } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 10))
-                            Text("\(missingIDs.count) missing")
-                                .font(.system(size: 11, weight: .medium))
-                        }
-                        .foregroundStyle(.orange)
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(Color.orange.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .overlay(RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(Color.orange.opacity(0.3), lineWidth: 0.5))
+                        Label("\(missingIDs.count) missing", systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal, 10).frame(height: 28)
+                            .background(Capsule().fill(Color.orange.opacity(0.1)))
                     }
                     .buttonStyle(.plain)
-                    .help("\(missingIDs.count) file(s) were moved or deleted. Click to remove from history.")
-                    .confirmationDialog(
-                        "Remove \(missingIDs.count) missing file(s) from history?",
-                        isPresented: $confirmRemoveMissing,
-                        titleVisibility: .visible
-                    ) {
-                        Button("Remove Missing", role: .destructive) {
-                            withAnimation(.spring(response: 0.25)) {
-                                for id in missingIDs { store.removeByID(id) }
-                                missingIDs = []
-                            }
-                        }
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text("These files were moved or deleted from disk. Their history entries will be removed.")
-                    }
+                    .help("\(missingIDs.count) file(s) were moved or deleted. Click to tidy up.")
                 }
 
                 if !store.entries.isEmpty {
-                    // FIX #8: Export history to JSON/CSV
-                    Button {
-                        exportHistory()
+                    Menu {
+                        Button("Export History…") { exportHistory() }
+                        if !missingIDs.isEmpty {
+                            Button("Remove \(missingIDs.count) Missing…") { confirmRemoveMissing = true }
+                        }
+                        Divider()
+                        Button("Clear History…", role: .destructive) { confirmClear = true }
                     } label: {
-                        Text("Export…")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Color.accentColor.opacity(0.8))
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(Color.accentColor.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 30, height: 30)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .help("Export history as JSON")
-                }
-
-                if !store.entries.isEmpty {
-                    Button {
-                        confirmClear = true
-                    } label: {
-                        Text("Clear All")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.red.opacity(0.8))
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(Color.red.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
-                    .buttonStyle(.plain)
-                    .confirmationDialog("Clear all download history?", isPresented: $confirmClear) {
-                        Button("Clear All", role: .destructive) { store.clearAll() }
-                        Button("Cancel", role: .cancel) {}
-                    }
+                    .compactMenuStyle()
+                    .help("More")
                 }
             }
-            .padding(.horizontal, 16).padding(.vertical, 10)
+            .padding(.horizontal, 20).padding(.vertical, 10)
+            .confirmationDialog(
+                "Remove \(missingIDs.count) missing file\(missingIDs.count == 1 ? "" : "s") from history?",
+                isPresented: $confirmRemoveMissing,
+                titleVisibility: .visible
+            ) {
+                Button("Remove Missing", role: .destructive) {
+                    withAnimation(.spring(response: 0.25)) {
+                        for id in missingIDs { store.removeByID(id) }
+                        missingIDs = []
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("These files were moved or deleted from disk. Only their history entries are removed.")
+            }
+            .confirmationDialog("Clear all download history?", isPresented: $confirmClear, titleVisibility: .visible) {
+                Button("Clear History", role: .destructive) { store.clearAll() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Your downloaded files stay where they are.")
+            }
 
             Divider().opacity(0.08)
 
@@ -262,8 +219,8 @@ struct HistoryView: View {
             // ── List ─────────────────────────────────────────────────────
             if filtered.isEmpty {
                 VStack(spacing: 12) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 40)).foregroundStyle(.secondary.opacity(0.4))
+                    Image(systemName: search.isEmpty ? "clock.arrow.circlepath" : "magnifyingglass")
+                        .font(.system(size: 34, weight: .light)).foregroundStyle(.tertiary)
                     Text(search.isEmpty ? "No downloads yet" : "No results for \"\(search)\"")
                         .font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
                     if search.isEmpty {
@@ -375,7 +332,7 @@ struct HistoryRow: View {
 
             Spacer(minLength: 0)
 
-            // Actions
+            // Actions (revealed on hover to keep the list calm)
             HStack(spacing: 6) {
                 // Copy URL to clipboard
                 Button {
@@ -432,8 +389,30 @@ struct HistoryRow: View {
                 .buttonStyle(.plain)
                 .help("Remove from history")
             }
+            .opacity(hovered ? 1 : 0)
+            .allowsHitTesting(hovered)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            if let file = mediaFile { NSWorkspace.shared.open(file) }
+        }
+        .contextMenu {
+            if let file = mediaFile {
+                Button("Open") { NSWorkspace.shared.open(file) }
+                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+                Divider()
+            }
+            Button("Download Again") {
+                NotificationCenter.default.post(name: .redownloadEntry, object: entry.url)
+            }
+            Button("Copy Link") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(entry.url, forType: .string)
+            }
+            Divider()
+            Button("Remove from History") { withAnimation(.spring(response: 0.25)) { store.remove(entry) } }
+        }
         .background {
             let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
             shape

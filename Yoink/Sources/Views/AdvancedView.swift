@@ -228,10 +228,7 @@ struct AdvancedView: View {
 
             // ── Download bar ──────────────────────────────────────────────
             HStack(spacing: 10) {
-                OutputFolderButton(directory: queue.outputDirectory, action: { pickOutputFolder() })
-                CategoryPicker()
-                    .environmentObject(settings)
-                    .environmentObject(queue)
+                SaveLocationMenu()
                 if !playlistItems.isEmpty {
                     Text("\(selectedItems.count) of \(playlistItems.count) selected")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -381,20 +378,6 @@ struct AdvancedView: View {
         // Switch to Video tab so the user sees their downloads
         withAnimation(.spring(response: 0.3)) {
             settings.appModeRaw = AppMode.video.rawValue
-        }
-    }
-
-    private func pickOutputFolder() {
-        let panel = NSOpenPanel()
-        panel.title = "Choose Download Folder"
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = true
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            _ = url.startAccessingSecurityScopedResource()
-            queue.outputDirectory = url
         }
     }
 }

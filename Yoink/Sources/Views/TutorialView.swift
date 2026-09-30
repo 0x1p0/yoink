@@ -29,10 +29,10 @@ private let tutorialSteps: [TutorialStep] = [
         icon: "film.fill",
         iconColor: .purple,
         title: "Downloading a Video",
-        subtitle: "The main Video tab is your everyday download queue. Paste a link, choose your quality, and hit Download.",
+        subtitle: "The Downloads tab is your everyday queue. Paste a link, pick Video or Audio, and hit Download.",
         bullets: [
             ("link",                  .accentColor, "Paste any video URL into a card"),
-            ("slider.horizontal.3",   .purple,      "Pick format: 1080p, 720p, audio-only, and more"),
+            ("slider.horizontal.3",   .purple,      "Subtitles, clips and SponsorBlock are one click away"),
             ("arrow.down.circle",     .green,       "Hit Download - or press ⌘D to start all"),
         ]
     ),
@@ -69,7 +69,7 @@ private let tutorialSteps: [TutorialStep] = [
         bullets: [
             ("doc.on.clipboard",      .accentColor, "Click the icon and paste a URL instantly"),
             ("eye",                   .green,       "See live download progress in the icon"),
-            ("gearshape",             .secondary,   "Right-click to access settings quickly"),
+            ("gearshape",             .secondary,   "The … menu has settings, snooze and import"),
         ]
     ),
     TutorialStep(
@@ -80,7 +80,7 @@ private let tutorialSteps: [TutorialStep] = [
         subtitle: "Copy a video link anywhere on your Mac and Yoink will spot it and offer to download - without you doing anything.",
         bullets: [
             ("link.badge.plus",       .accentColor, "A banner appears when a supported link is copied"),
-            ("arrow.down.circle",     .green,       "Tap Download Now, Watch Later, or dismiss"),
+            ("arrow.down.circle",     .green,       "Choose Download, Later, or dismiss"),
             ("bell.slash",            .orange,      "Snooze the monitor for 5 min, 30 min, or longer"),
         ]
     ),
