@@ -504,8 +504,8 @@ struct PlaylistItemRow: View {
                             let vid = item.videoID
                             let url = "https://www.youtube.com/watch?v=\(vid)"
                             Task.detached(priority: .userInitiated) {
-                                guard let path = DependencyService.appSupportBin.appendingPathComponent("yt-dlp").path as String?,
-                                      FileManager.default.fileExists(atPath: path) else { return }
+                                let path = DependencyService.runtimePath(for: "yt-dlp")
+                                guard FileManager.default.fileExists(atPath: path) else { return }
                                 let result = await DownloadService.shared.fetchSingleVideoMeta(url: url, ytdlpPath: path, authArgs: [])
                                 if let meta = try? result.get() {
                                     await MainActor.run {

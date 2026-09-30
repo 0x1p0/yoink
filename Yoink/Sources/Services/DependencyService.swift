@@ -64,8 +64,25 @@ final class DependencyService: ObservableObject {
         return base.appendingPathComponent("Yoink/bin", isDirectory: true)
     }
 
+    /// yt-dlp ships as PyInstaller's unpacked ("onedir") macOS build: a folder holding the
+    /// `yt-dlp_macos` launcher plus its `_internal` runtime. It starts in ~0.2 s, versus ~7 s
+    /// for the single-file build, which re-extracts itself to a temp folder on every run.
+    nonisolated static let ytdlpFolderName = "yt-dlp_macos"
+
+    nonisolated static var ytdlpFolder: URL {
+        appSupportBin.appendingPathComponent(ytdlpFolderName, isDirectory: true)
+    }
+
     nonisolated static func runtimePath(for binary: String) -> String {
-        appSupportBin.appendingPathComponent(binary).path
+        guard binary == "yt-dlp" else { return appSupportBin.appendingPathComponent(binary).path }
+        let onedir = ytdlpFolder.appendingPathComponent(ytdlpFolderName).path
+        // Fall back to a legacy single-file install until the folder build is in place
+        let legacy = appSupportBin.appendingPathComponent("yt-dlp").path
+        if !FileManager.default.isExecutableFile(atPath: onedir),
+           FileManager.default.isExecutableFile(atPath: legacy) {
+            return legacy
+        }
+        return onedir
     }
 
     var allReady: Bool { ytdlp.isReady && ffmpeg.isReady }
@@ -85,7 +102,7 @@ final class DependencyService: ObservableObject {
 
             let now = Date().timeIntervalSince1970
             let lastCheck = await self.lastUpdateCheck
-            if now - lastCheck > 86_400 {
+            if SettingsManager.shared.checkUpdatesOnLaunch, now - lastCheck > 86_400 {
                 await MainActor.run { self.lastUpdateCheck = now }
                 await self.silentUpdateYtdlp()
             }
@@ -99,7 +116,9 @@ final class DependencyService: ObservableObject {
         let binDir = Self.appSupportBin
         try? fm.createDirectory(at: binDir, withIntermediateDirectories: true)
 
-        for binary in ["yt-dlp", "ffmpeg", "ffprobe"] {
+        installBundledYtdlp()
+
+        for binary in ["ffmpeg", "ffprobe"] {
             let dest = binDir.appendingPathComponent(binary)
             guard let src = Bundle.main.url(forResource: binary, withExtension: nil,
                                              subdirectory: "bin") else {
@@ -121,6 +140,49 @@ final class DependencyService: ObservableObject {
             } catch {
                 log("✗ Failed to install \(binary): \(error.localizedDescription)")
             }
+        }
+    }
+
+    /// Installs the bundled yt-dlp folder into App Support when it isn't there yet, and
+    /// removes the slow single-file build left behind by older versions of Yoink.
+    nonisolated private func installBundledYtdlp() {
+        let fm = FileManager.default
+        let dest = Self.ytdlpFolder
+        let destExe = dest.appendingPathComponent(Self.ytdlpFolderName)
+        let legacy = Self.appSupportBin.appendingPathComponent("yt-dlp")
+
+        if let src = Bundle.main.url(forResource: Self.ytdlpFolderName, withExtension: nil, subdirectory: "bin") {
+            if !fm.isExecutableFile(atPath: destExe.path) {
+                do {
+                    try? fm.removeItem(at: dest)
+                    try fm.copyItem(at: src, to: dest)
+                    try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destExe.path)
+                    Self.removeQuarantine(at: dest)
+                    log("✓ Installed yt-dlp → \(dest.path)")
+                } catch {
+                    log("✗ Failed to install yt-dlp: \(error.localizedDescription)")
+                    return
+                }
+            }
+            if fm.fileExists(atPath: legacy.path) {
+                try? fm.removeItem(at: legacy)
+                log("✓ Removed old single-file yt-dlp")
+            }
+        } else if let src = Bundle.main.url(forResource: "yt-dlp", withExtension: nil, subdirectory: "bin"),
+                  !fm.isExecutableFile(atPath: destExe.path),
+                  !fm.fileExists(atPath: legacy.path) || Self.needsReplace(legacy) {
+            // Older bundle layout (single-file yt-dlp) — keep it working
+            try? fm.removeItem(at: legacy)
+            do {
+                try fm.copyItem(at: src, to: legacy)
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: legacy.path)
+                Self.removeQuarantine(at: legacy)
+                log("✓ Installed yt-dlp (single file) → \(legacy.path)")
+            } catch {
+                log("✗ Failed to install yt-dlp: \(error.localizedDescription)")
+            }
+        } else if !fm.isExecutableFile(atPath: destExe.path) && !fm.fileExists(atPath: legacy.path) {
+            log("⚠️ Bundled yt-dlp not found in Resources/bin/ — run ./download_binaries.sh")
         }
     }
 
@@ -365,6 +427,11 @@ final class DependencyService: ObservableObject {
     }
 
     nonisolated private func reinstallFromBundle(_ name: String) {
+        if name == "yt-dlp" {
+            try? FileManager.default.removeItem(at: Self.ytdlpFolder)
+            installBundledYtdlp()
+            return
+        }
         let fm = FileManager.default
         let dest = Self.appSupportBin.appendingPathComponent(name)
         guard let src = Bundle.main.url(forResource: name, withExtension: nil, subdirectory: "bin") else {
@@ -392,39 +459,64 @@ final class DependencyService: ObservableObject {
         await MainActor.run { ytdlp = .updating(from: prev) }
         log("⬆︎ yt-dlp \(prev) → \(latest)")
 
-        let dest = Self.appSupportBin.appendingPathComponent("yt-dlp")
-        let url = URL(string: "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos")!
+        let url = URL(string: "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos.zip")!
+        let fm = FileManager.default
+        let staging = Self.appSupportBin.appendingPathComponent("\(Self.ytdlpFolderName).new", isDirectory: true)
         do {
-            let (tmp, response) = try await URLSession.shared.download(from: url)
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 180
+            let (tmp, response) = try await URLSession.shared.download(for: request)
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 throw URLError(.badServerResponse)
             }
-            let fm = FileManager.default
-            try? fm.removeItem(at: dest)
-            try fm.moveItem(at: tmp, to: dest)
-            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
-            Self.removeQuarantine(at: dest)
-            // Verify it actually runs before declaring success
-            if await run(dest.path, args: ["--version"]) != nil {
-                log("✓ yt-dlp updated to \(latest)")
-                await MainActor.run { ytdlp = .ok(version: latest) }
-            } else {
-                log("✗ yt-dlp update failed verification — restoring bundle")
-                reinstallFromBundle("yt-dlp")
-                await MainActor.run { ytdlp = .ok(version: prev.isEmpty ? "bundled" : prev) }
+            // Unpack next to the live copy, verify it runs, then swap it in
+            try? fm.removeItem(at: staging)
+            try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+            let unzip = Process()
+            unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+            unzip.arguments = ["-x", "-k", tmp.path, staging.path]
+            unzip.standardOutput = Pipe(); unzip.standardError = Pipe()
+            try unzip.run()
+            unzip.waitUntilExit()
+            try? fm.removeItem(at: tmp)
+            guard unzip.terminationStatus == 0 else { throw URLError(.cannotDecodeContentData) }
+
+            // The archive holds the launcher + _internal at its root (or one folder down)
+            var root = staging
+            if !fm.fileExists(atPath: root.appendingPathComponent(Self.ytdlpFolderName).path),
+               let sub = (try? fm.contentsOfDirectory(at: staging, includingPropertiesForKeys: nil))?
+                   .first(where: { fm.fileExists(atPath: $0.appendingPathComponent(Self.ytdlpFolderName).path) }) {
+                root = sub
             }
+            let exe = root.appendingPathComponent(Self.ytdlpFolderName)
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: exe.path)
+            Self.removeQuarantine(at: root)
+            guard await run(exe.path, args: ["--version"]) != nil else {
+                throw NSError(domain: "yoink", code: 4,
+                              userInfo: [NSLocalizedDescriptionKey: "new yt-dlp failed verification"])
+            }
+
+            try? fm.removeItem(at: Self.ytdlpFolder)
+            try fm.moveItem(at: root, to: Self.ytdlpFolder)
+            try? fm.removeItem(at: staging)
+            try? fm.removeItem(at: Self.appSupportBin.appendingPathComponent("yt-dlp")) // legacy single file
+            log("✓ yt-dlp updated to \(latest)")
+            await MainActor.run { ytdlp = .ok(version: latest) }
         } catch {
+            try? fm.removeItem(at: staging)
             log("✗ yt-dlp update failed: \(error.localizedDescription)")
-            reinstallFromBundle("yt-dlp")
+            if !fm.isExecutableFile(atPath: Self.runtimePath(for: "yt-dlp")) {
+                reinstallFromBundle("yt-dlp")
+            }
             await MainActor.run { ytdlp = .ok(version: prev.isEmpty ? "bundled" : prev) }
         }
     }
 
-    /// Removes com.apple.quarantine so Gatekeeper doesn't block bundled Mach-O tools.
+    /// Removes com.apple.quarantine (recursively for folders) so Gatekeeper doesn't block bundled tools.
     nonisolated static func removeQuarantine(at url: URL) {
         let xattr = Process()
         xattr.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
-        xattr.arguments = ["-d", "com.apple.quarantine", url.path]
+        xattr.arguments = ["-dr", "com.apple.quarantine", url.path]
         xattr.standardOutput = Pipe()
         xattr.standardError  = Pipe()
         try? xattr.run()

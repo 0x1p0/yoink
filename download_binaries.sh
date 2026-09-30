@@ -1,6 +1,6 @@
 #!/bin/bash
 # Fetch native/universal macOS binaries for Yoink.
-#   - yt-dlp : official universal2 binary (yt-dlp_macos) — no Python runtime needed
+#   - yt-dlp : official universal2 unpacked build (yt-dlp_macos.zip) — fast startup, no system Python
 #   - ffmpeg/ffprobe : fat (universal) binaries lipo'd from martin-riedl.de arm64 + amd64
 # Evermeet.cx is intentionally NOT used: it only ships x86_64 and forces Rosetta on Apple Silicon.
 set -euo pipefail
@@ -82,20 +82,35 @@ install_universal_tool() {
   fi
 }
 
-# ── yt-dlp (official universal2 standalone — replaces the old Python + pip setup) ──
+# ── yt-dlp (official universal2 build, unpacked "onedir" variant) ──
+# The single-file yt-dlp_macos re-extracts ~100 MB of Python to a temp folder on every
+# run (~7 s per call). The unpacked build starts in ~0.2 s, so metadata fetches are
+# several times faster. Yoink bundles it as Resources/bin/yt-dlp_macos/.
 
 echo ""
-echo "📦 Fetching yt-dlp (universal macOS binary)…"
+echo "📦 Fetching yt-dlp (universal macOS build, unpacked)…"
+YT_DIR="$BIN_DIR/yt-dlp_macos"
 curl -fsSL --retry 3 --retry-delay 1 \
-  -o "$BIN_DIR/yt-dlp" \
-  "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"
-chmod +x "$BIN_DIR/yt-dlp"
+  -o "$TMP_ROOT/yt-dlp_macos.zip" \
+  "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos.zip"
+rm -rf "$YT_DIR" "$BIN_DIR/yt-dlp"
+mkdir -p "$YT_DIR"
+ditto -x -k "$TMP_ROOT/yt-dlp_macos.zip" "$YT_DIR"
+# Some archives nest everything one folder down — flatten it
+if [ ! -f "$YT_DIR/yt-dlp_macos" ]; then
+  NESTED="$(find "$YT_DIR" -maxdepth 2 -type f -name yt-dlp_macos | head -1)"
+  [ -n "$NESTED" ] || die "yt-dlp_macos.zip did not contain the yt-dlp_macos launcher"
+  NESTED_DIR="$(dirname "$NESTED")"
+  mv "$NESTED_DIR"/* "$YT_DIR"/
+  rmdir "$NESTED_DIR" 2>/dev/null || true
+fi
+chmod +x "$YT_DIR/yt-dlp_macos"
 # Gatekeeper quarantine breaks freshly downloaded Mach-O binaries inside DMG installs
-xattr -d com.apple.quarantine "$BIN_DIR/yt-dlp" 2>/dev/null || true
+xattr -dr com.apple.quarantine "$YT_DIR" 2>/dev/null || true
 
-YT_VER="$("$BIN_DIR/yt-dlp" --version 2>/dev/null | head -1 || true)"
+YT_VER="$("$YT_DIR/yt-dlp_macos" --version 2>/dev/null | head -1 || true)"
 [ -n "$YT_VER" ] || die "yt-dlp downloaded but failed to run"
-log "yt-dlp ${YT_VER} (universal)"
+log "yt-dlp ${YT_VER} (universal, unpacked)"
 
 # ── ffmpeg / ffprobe (universal) ──
 
@@ -115,7 +130,7 @@ fi
 
 echo ""
 log "Bundle ready:"
-du -sh "$BIN_DIR/yt-dlp" "$BIN_DIR/ffmpeg" "$BIN_DIR/ffprobe" | sed 's/^/   /'
+du -sh "$BIN_DIR/yt-dlp_macos" "$BIN_DIR/ffmpeg" "$BIN_DIR/ffprobe" | sed 's/^/   /'
 
 echo ""
 echo "   Host arch : $ARCH"

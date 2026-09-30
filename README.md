@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/d543bf3e-5aa3-4ba5-b808-5bb7b1bcb1f1
 
 Yoink is a clean, native macOS app for downloading videos and audio from YouTube, Twitch, Instagram, TikTok, Twitter/X, Reddit, Vimeo, SoundCloud, and 1000+ other sites. It wraps `yt-dlp` and `ffmpeg` in a proper SwiftUI interface so you never have to touch the Terminal.
 
-`ffmpeg` and `ffprobe` ship inside the app bundle (placed in `Yoink/Resources/bin/` in the repo). `yt-dlp` is driven via a bundled standalone Python environment - the `download_binaries.sh` script handles building everything. On first launch the app copies all binaries to `~/Library/Application Support/Yoink/bin/` and keeps `yt-dlp` up to date silently in the background.
+`yt-dlp`, `ffmpeg` and `ffprobe` ship inside the app bundle (placed in `Yoink/Resources/bin/` in the repo by `download_binaries.sh`). `yt-dlp` uses the official unpacked macOS build, which starts in a fraction of a second. On first launch the app copies the binaries to `~/Library/Application Support/Yoink/bin/` and keeps `yt-dlp` up to date silently in the background.
 
 ---
 
@@ -145,17 +145,13 @@ cd yoink
 
 **2. Get the binaries**
 
-`ffmpeg` and `ffprobe` are provided as releases assets in this repo - download them from the [Releases page](https://github.com/0x1p0/yoink/releases/latest) and place them in `Yoink/Resources/bin/`.
-
-To also build the `yt-dlp` + standalone Python bundle (required for a fully working build), run:
-
 ```bash
 ./download_binaries.sh
 ```
 
-This script downloads a standalone Python 3.12, installs `yt-dlp` into it, downloads `ffmpeg` and `ffprobe` from evermeet.cx, and places everything in `Yoink/Resources/bin/`. It will also print instructions for adding the `python/` folder to Xcode correctly.
+This downloads the official universal `yt-dlp` macOS build (unpacked, into `yt-dlp_macos/`) and universal `ffmpeg` + `ffprobe` builds, and places everything in `Yoink/Resources/bin/`.
 
-> **Note:** You do not need Python installed on your Mac. The script uses a self-contained Python build that lives entirely inside the app.
+> **Note:** You do not need Python or Homebrew. Everything the app needs lives inside the app bundle.
 
 **3. Open in Xcode**
 ```bash
@@ -255,10 +251,9 @@ Yoink/
 │   └── Resources/
 │       ├── Assets.xcassets/          # app icon, accent colour
 │       └── bin/
-│           ├── yt-dlp                ← launcher script (runs via bundled Python)
-│           ├── python/               ← standalone Python 3.12 (blue folder reference in Xcode)
-│           ├── ffmpeg                ← download from Releases or run download_binaries.sh
-│           └── ffprobe               ← download from Releases or run download_binaries.sh
+│           ├── yt-dlp_macos/         ← official unpacked yt-dlp build (run download_binaries.sh)
+│           ├── ffmpeg                ← run download_binaries.sh
+│           └── ffprobe               ← run download_binaries.sh
 ```
 
 ---
@@ -273,17 +268,15 @@ App launches
        Copies Resources/bin/ → ~/Library/Application Support/Yoink/bin/
        (skipped on subsequent launches if files already exist)
   └─ checkAll()
-       Reads installed versions → shows in Settings → Dependencies
-       If >24h since last check:
+       Reads installed versions → shows in Settings → Advanced
+       If automatic updates are on and >24h since last check:
          └─ Fetches github.com/yt-dlp/yt-dlp/releases/latest
               If newer version found:
-                └─ pip installs newer yt-dlp into the bundled Python env
+                └─ Downloads yt-dlp_macos.zip, verifies it runs, swaps it in
                      Logs "✓ yt-dlp updated to vX.YY.ZZ"
-         └─ Checks evermeet.cx for newer ffmpeg / ffprobe builds
-              If newer found: downloads and atomically replaces the binary
 ```
 
-`yt-dlp` is run via the bundled standalone Python (`python/bin/python3 -m yt_dlp`), so it updates through `pip` rather than replacing a binary. `ffmpeg` and `ffprobe` are static builds and update by binary replacement. You can also force-update any of them from **Settings → Dependencies**.
+`yt-dlp` uses the unpacked ("onedir") build rather than the single-file one: the single file re-extracts itself on every run (~7 s per call), while the unpacked build starts in ~0.2 s. `ffmpeg` and `ffprobe` are static universal builds. You can update any of them from **Settings → Advanced**. Release DMGs are LZMA-compressed (`ULMO`) to keep the download small.
 
 ---
 

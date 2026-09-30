@@ -398,23 +398,95 @@ struct GlassChromeModifier<S: Shape>: ViewModifier {
     }
 }
 
-/// Tabs with icons and live counts. ⌘1–⌘4 switch between them.
+/// Tabs with icons and live counts. Click a tab, or press anywhere on the bar and slide —
+/// the Liquid Glass pill follows the pointer, morphs between tab widths, and snaps to the
+/// nearest tab on release. ⌘1–⌘4 switch tabs from the keyboard.
 struct ModeToggle: View {
     @EnvironmentObject var settings: SettingsManager
     @EnvironmentObject var queue: DownloadQueue
     @EnvironmentObject var watchLater: WatchLaterStore
     @Environment(\.colorScheme) private var colorScheme
-    @Namespace private var selection
+
+    @State private var tabFrames: [AppMode: CGRect] = [:]
+    /// Pill centre while the user is sliding it; nil when at rest.
+    @State private var dragX: CGFloat? = nil
+    @State private var isPressing = false
+    @State private var hoveredMode: AppMode? = nil
+    @State private var lastDragMode: AppMode? = nil
+
+    private let modes = AppMode.allCases
+    private static let space = "modeTabs"
+
+    private var isDragging: Bool { dragX != nil }
+
+    /// The tab that reads as "selected" right now — follows the pill while dragging.
+    private var highlighted: AppMode {
+        if let x = dragX { return mode(at: x) }
+        return settings.appMode
+    }
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(AppMode.allCases.enumerated()), id: \.element.id) { index, mode in
-                tab(mode, index: index)
+        ZStack(alignment: .topLeading) {
+            pill
+            HStack(spacing: 2) {
+                ForEach(modes) { mode in
+                    tabLabel(mode)
+                }
             }
         }
+        .coordinateSpace(name: Self.space)
+        .onPreferenceChange(TabFramesKey.self) { tabFrames = $0 }
         .padding(3)
         .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.06)))
+        .contentShape(Capsule(style: .continuous))
+        .gesture(slideGesture)
+        .background(shortcutButtons)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Sections")
     }
+
+    // MARK: Pill
+
+    private var pillFrame: CGRect? {
+        guard let selected = tabFrames[settings.appMode] else { return nil }
+        guard let x = dragX else { return selected }
+        let width = interpolatedWidth(at: x)
+        let first = modes.compactMap { tabFrames[$0] }.first ?? selected
+        let last  = modes.compactMap { tabFrames[$0] }.last ?? selected
+        let centre = min(max(x, first.minX + width / 2), last.maxX - width / 2)
+        return CGRect(x: centre - width / 2, y: selected.minY, width: width, height: selected.height)
+    }
+
+    @ViewBuilder
+    private var pill: some View {
+        if let frame = pillFrame {
+            pillShape
+                .frame(width: frame.width, height: frame.height)
+                .scaleEffect(isDragging ? 1.1 : (isPressing ? 0.97 : 1))
+                .offset(x: frame.minX, y: frame.minY)
+                .allowsHitTesting(false)
+        }
+    }
+
+    @ViewBuilder
+    private var pillShape: some View {
+        let shape = Capsule(style: .continuous)
+        if #available(macOS 26.0, *) {
+            shape
+                .fill(colorScheme == .dark ? Color.white.opacity(isDragging ? 0.04 : 0.10)
+                                           : Color.white.opacity(isDragging ? 0.25 : 0.85))
+                .glassEffect(isDragging ? .clear.interactive() : .regular.interactive(), in: shape)
+                .shadow(color: .black.opacity(isDragging ? 0.18 : 0.08), radius: isDragging ? 8 : 2, y: isDragging ? 3 : 1)
+        } else {
+            shape
+                .fill(colorScheme == .dark ? Color.white.opacity(0.14) : Color.white)
+                .overlay(shape.strokeBorder(Color.primary.opacity(isDragging ? 0.12 : 0.05), lineWidth: 0.5))
+                .shadow(color: .black.opacity(isDragging ? 0.18 : (colorScheme == .dark ? 0 : 0.10)),
+                        radius: isDragging ? 8 : 2, y: isDragging ? 3 : 1)
+        }
+    }
+
+    // MARK: Tabs
 
     private func count(for mode: AppMode) -> Int {
         switch mode {
@@ -424,46 +496,119 @@ struct ModeToggle: View {
         }
     }
 
-    private func tab(_ mode: AppMode, index: Int) -> some View {
-        let selected = settings.appMode == mode
+    private func tabLabel(_ mode: AppMode) -> some View {
+        let lit = highlighted == mode
         let n = count(for: mode)
-        return Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                settings.appModeRaw = mode.rawValue
+        let index = (modes.firstIndex(of: mode) ?? 0) + 1
+        return HStack(spacing: 5) {
+            Image(systemName: lit ? mode.selectedIcon : mode.icon)
+                .font(.system(size: 11, weight: .semibold))
+            Text(mode.shortLabel)
+                .font(.system(size: 12, weight: lit ? .semibold : .medium))
+            if n > 0 {
+                Text("\(n)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(lit ? Color.white : Color.secondary)
+                    .padding(.horizontal, 5)
+                    .frame(minWidth: 17, minHeight: 16)
+                    .background(Capsule().fill(lit ? Color.accentColor : Color.primary.opacity(0.1)))
             }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: selected ? mode.selectedIcon : mode.icon)
-                    .font(.system(size: 11, weight: .semibold))
-                Text(mode.shortLabel)
-                    .font(.system(size: 12, weight: selected ? .semibold : .medium))
-                if n > 0 {
-                    Text("\(n)")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(selected ? Color.white : Color.secondary)
-                        .padding(.horizontal, 5)
-                        .frame(minWidth: 17, minHeight: 16)
-                        .background(Capsule().fill(selected ? Color.accentColor : Color.primary.opacity(0.1)))
-                }
-            }
-            .foregroundStyle(selected ? Color.primary : Color.secondary)
-            .padding(.horizontal, 11)
-            .frame(height: 28)
-            .background {
-                if selected {
-                    Capsule(style: .continuous)
-                        .fill(colorScheme == .dark ? Color.white.opacity(0.14) : Color.white)
-                        .shadow(color: .black.opacity(colorScheme == .dark ? 0 : 0.10), radius: 2, y: 1)
-                        .matchedGeometryEffect(id: "selectedTab", in: selection)
-                }
-            }
-            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
-        .help("\(mode.shortLabel)  ⌘\(index + 1)")
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .foregroundStyle(lit ? Color.primary : (hoveredMode == mode ? Color.primary.opacity(0.8) : Color.secondary))
+        .padding(.horizontal, 11)
+        .frame(height: 28)
+        .contentShape(Capsule())
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: TabFramesKey.self,
+                                       value: [mode: geo.frame(in: .named(Self.space))])
+            }
+        )
+        .onHover { inside in
+            if inside { hoveredMode = mode } else if hoveredMode == mode { hoveredMode = nil }
+        }
+        .animation(.easeOut(duration: 0.15), value: lit)
+        .help("\(mode.shortLabel)  ⌘\(index)")
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(settings.appMode == mode ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { select(mode) }
+    }
+
+    // MARK: Interaction
+
+    private var slideGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
+            .onChanged { value in
+                if !isPressing {
+                    withAnimation(.easeOut(duration: 0.12)) { isPressing = true }
+                }
+                // Treat small movements as a click; past a few points the pill follows the pointer
+                guard isDragging || abs(value.translation.width) > 4 else { return }
+                if !isDragging { Haptics.tick() }
+                withAnimation(.interactiveSpring(response: 0.22, dampingFraction: 0.82)) {
+                    dragX = value.location.x
+                }
+                let m = mode(at: value.location.x)
+                if m != lastDragMode {
+                    if lastDragMode != nil { Haptics.tick() }
+                    lastDragMode = m
+                }
+            }
+            .onEnded { value in
+                let target = mode(at: value.location.x)
+                withAnimation(.spring(response: 0.36, dampingFraction: 0.76)) {
+                    dragX = nil
+                    isPressing = false
+                    settings.appModeRaw = target.rawValue
+                }
+                lastDragMode = nil
+            }
+    }
+
+    private func select(_ mode: AppMode) {
+        withAnimation(.spring(response: 0.36, dampingFraction: 0.8)) {
+            settings.appModeRaw = mode.rawValue
+        }
+    }
+
+    /// Nearest tab to an x position in the bar's coordinate space.
+    private func mode(at x: CGFloat) -> AppMode {
+        modes.min { a, b in
+            abs((tabFrames[a]?.midX ?? .infinity) - x) < abs((tabFrames[b]?.midX ?? .infinity) - x)
+        } ?? settings.appMode
+    }
+
+    /// Pill width blended between neighbouring tabs so it morphs smoothly as it slides.
+    private func interpolatedWidth(at x: CGFloat) -> CGFloat {
+        let frames = modes.compactMap { tabFrames[$0] }
+        guard let first = frames.first, let last = frames.last else { return 80 }
+        if x <= first.midX { return first.width }
+        for (a, b) in zip(frames, frames.dropFirst()) where x <= b.midX {
+            let t = (x - a.midX) / max(1, b.midX - a.midX)
+            return a.width + (b.width - a.width) * t
+        }
+        return last.width
+    }
+
+    /// Invisible buttons that carry the ⌘1–⌘4 shortcuts.
+    private var shortcutButtons: some View {
+        ZStack {
+            ForEach(Array(modes.enumerated()), id: \.element.id) { index, mode in
+                Button("") { select(mode) }
+                    .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+            }
+        }
+        .frame(width: 0, height: 0)
+        .opacity(0)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct TabFramesKey: PreferenceKey {
+    static var defaultValue: [AppMode: CGRect] = [:]
+    static func reduce(value: inout [AppMode: CGRect], nextValue: () -> [AppMode: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
     }
 }
 

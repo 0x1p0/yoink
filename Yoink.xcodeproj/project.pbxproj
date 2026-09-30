@@ -199,7 +199,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "BIN=\"$SRCROOT/Yoink/Resources/bin\"\nif [ ! -f \"$BIN/yt-dlp\" ] || [ ! -f \"$BIN/ffmpeg\" ]; then\n  echo \"error: Run ./download_binaries.sh first.\" >&2\n  exit 1\nfi\nchmod +x \"$BIN/yt-dlp\" \"$BIN/ffmpeg\"\n";
+			shellScript = "BIN=\"$SRCROOT/Yoink/Resources/bin\"\nif [ ! -f \"$BIN/yt-dlp_macos/yt-dlp_macos\" ] || [ ! -f \"$BIN/ffmpeg\" ]; then\n  echo \"error: Run ./download_binaries.sh first.\" >&2\n  exit 1\nfi\nchmod +x \"$BIN/yt-dlp_macos/yt-dlp_macos\" \"$BIN/ffmpeg\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
