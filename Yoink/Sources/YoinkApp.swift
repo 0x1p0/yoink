@@ -271,6 +271,7 @@ struct YoinkApp: App {
         Settings {
             SettingsView()
                 .environmentObject(settings)
+                .environmentObject(queue)
                 .environmentObject(deps)
                 .environmentObject(theme)
                 .environmentObject(appUpdate)

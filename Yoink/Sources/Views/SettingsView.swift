@@ -1,152 +1,274 @@
 import SwiftUI
 
-// MARK: - Settings Window (native sidebar TabView)
+// MARK: - Settings Window
+//
+// Laid out like System Settings: a sidebar of sections with coloured icons, and native
+// grouped forms on the right. Grouped forms pick up the system's Liquid Glass styling on
+// macOS 26 and stay perfectly native on earlier releases.
+
+enum SettingsPane: String, CaseIterable, Identifiable {
+    case general, appearance, downloads, files, automation, network, performance, advanced, about
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general:     return "General"
+        case .appearance:  return "Appearance"
+        case .downloads:   return "Downloads"
+        case .files:       return "Files & Folders"
+        case .automation:  return "Clipboard & Automation"
+        case .network:     return "Network"
+        case .performance: return "Performance"
+        case .advanced:    return "Advanced"
+        case .about:       return "About"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .general:     return "gearshape.fill"
+        case .appearance:  return "paintbrush.fill"
+        case .downloads:   return "arrow.down.circle.fill"
+        case .files:       return "folder.fill"
+        case .automation:  return "doc.on.clipboard.fill"
+        case .network:     return "network"
+        case .performance: return "gauge.with.needle.fill"
+        case .advanced:    return "wrench.and.screwdriver.fill"
+        case .about:       return "info.circle.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .general:     return .gray
+        case .appearance:  return .blue
+        case .downloads:   return .accentColor
+        case .files:       return .cyan
+        case .automation:  return .orange
+        case .network:     return .indigo
+        case .performance: return .pink
+        case .advanced:    return .gray
+        case .about:       return .purple
+        }
+    }
+}
 
 struct SettingsView: View {
     @EnvironmentObject var settings:   SettingsManager
     @EnvironmentObject var deps:       DependencyService
     @EnvironmentObject var theme:      ThemeManager
     @EnvironmentObject var appUpdate:  AppUpdateService
+    @AppStorage("settingsPane") private var paneRaw: String = SettingsPane.general.rawValue
 
-    var body: some View {
-        TabView {
-            AppearanceSettings()
-                .tabItem { Label("Appearance", systemImage: "paintbrush.pointed") }
-            DownloadSettings()
-                .tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
-            OutputSettings()
-                .tabItem { Label("Output", systemImage: "folder") }
-            NetworkSettings()
-                .tabItem { Label("Network", systemImage: "network") }
-            AutomationSettings()
-                .tabItem { Label("Automation", systemImage: "gearshape.2") }
-            PerformanceSettings()
-                .tabItem { Label("Performance", systemImage: "gauge.with.needle") }
-            AdvancedSettings()
-                .tabItem { Label("Advanced", systemImage: "slider.horizontal.3") }
-            AboutSettings()
-                .tabItem { Label("About", systemImage: "info.circle") }
-        }
-        .environmentObject(settings)
-        .environmentObject(deps)
-        .environmentObject(theme)
-        .environmentObject(appUpdate)
-        .frame(minWidth: 700, idealWidth: 740, minHeight: 540, idealHeight: 620)
-        // System Settings chrome (toolbar/sidebar) supplies Liquid Glass on macOS 26+.
-        // Do not paint an opaque window background over it.
+    private var pane: Binding<SettingsPane?> {
+        Binding(
+            get: { SettingsPane(rawValue: paneRaw) ?? .general },
+            set: { if let p = $0 { paneRaw = p.rawValue } }
+        )
     }
-}
 
-// MARK: - Shared Helpers
-
-struct SettingsGroup<Content: View>: View {
-    let title: String
-    @ViewBuilder var content: Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Title Case per current HIG — not all-caps
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
-
-            VStack(spacing: 0) {
-                content
+        NavigationSplitView {
+            List(SettingsPane.allCases, selection: pane) { p in
+                NavigationLink(value: p) {
+                    SettingsSidebarLabel(pane: p)
+                }
             }
-            .padding(0)
-            .background { groupSurface }
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .modifier(SettingsGroupGlassModifier())
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 240)
+        } detail: {
+            detail(for: SettingsPane(rawValue: paneRaw) ?? .general)
+                .navigationTitle((SettingsPane(rawValue: paneRaw) ?? .general).title)
         }
+        .modifier(HideSidebarToggle())
+        .frame(minWidth: 720, idealWidth: 800, minHeight: 500, idealHeight: 620)
     }
 
     @ViewBuilder
-    private var groupSurface: some View {
-        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
-        if #available(macOS 26.0, *) {
-            shape
-                .fill(.thinMaterial)
-                .overlay {
-                    shape.strokeBorder(Color(.separatorColor).opacity(0.30), lineWidth: 0.5)
-                }
-                .allowsHitTesting(false)
-        } else {
-            shape
-                .fill(Color(.controlBackgroundColor))
-                .overlay {
-                    shape.strokeBorder(Color(.separatorColor).opacity(0.45), lineWidth: 0.5)
-                }
-                .allowsHitTesting(false)
+    private func detail(for pane: SettingsPane) -> some View {
+        switch pane {
+        case .general:     GeneralSettings()
+        case .appearance:  AppearanceSettings()
+        case .downloads:   DownloadSettings()
+        case .files:       OutputSettings()
+        case .automation:  AutomationSettings()
+        case .network:     NetworkSettings()
+        case .performance: PerformanceSettings()
+        case .advanced:    AdvancedSettings()
+        case .about:       AboutSettings()
         }
     }
 }
 
-struct SettingsGroupGlassModifier: ViewModifier {
+private struct HideSidebarToggle: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content.glassEffect(
-                .regular,
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-            )
+        if #available(macOS 14.0, *) {
+            content.toolbar(removing: .sidebarToggle)
         } else {
             content
         }
     }
 }
 
-// Adds a hairline separator between two adjacent settings rows
-struct SettingsDivider: View {
+struct SettingsSidebarLabel: View {
+    let pane: SettingsPane
     var body: some View {
-        Divider().padding(.leading, 16).opacity(0.5)
+        Label {
+            Text(pane.title)
+        } icon: {
+            SettingsIcon(symbol: pane.symbol, tint: pane.tint)
+        }
     }
 }
 
-struct SettingsRow<Content: View>: View {
-    let label:  String
-    let detail: String?
-    let icon:   String?
-    @ViewBuilder var trailing: Content
-
-    init(_ label: String, detail: String? = nil, icon: String? = nil,
-         @ViewBuilder trailing: () -> Content) {
-        self.label    = label
-        self.detail   = detail
-        self.icon     = icon
-        self.trailing = trailing()
-    }
+/// The white-glyph-on-colour rounded square used by System Settings.
+struct SettingsIcon: View {
+    let symbol: String
+    let tint: Color
+    var size: CGFloat = 20
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            if let icon {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .medium))
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.55, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(
+                RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
+                    .fill(tint.gradient)
+            )
+    }
+}
+
+/// Title + secondary description, used as the label of form rows.
+struct RowLabel: View {
+    let title: String
+    var detail: String? = nil
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            if let detail {
+                Text(detail)
+                    .font(.callout)
                     .foregroundStyle(.secondary)
-                    .frame(width: 26, height: 26)
-                    .background(Circle().fill(Color.primary.opacity(0.06)))
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(.system(size: 13, weight: .medium))
                     .fixedSize(horizontal: false, vertical: true)
-                if let detail {
-                    Text(detail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+// MARK: - General
+
+struct GeneralSettings: View {
+    @EnvironmentObject var settings:  SettingsManager
+    @EnvironmentObject var appUpdate: AppUpdateService
+
+    var body: some View {
+        Form {
+            Section("App") {
+                Toggle(isOn: $settings.showInDock) {
+                    RowLabel(title: "Show Yoink in the Dock",
+                             detail: "When off, Yoink lives only in the menu bar once its window is closed.")
+                }
+                .onChange(of: settings.showInDock) { show in
+                    // Re-show in the Dock right away; hiding happens when the window closes
+                    if show { NSApp.setActivationPolicy(.regular) }
+                }
+                Toggle(isOn: $settings.hapticsEnabled) {
+                    RowLabel(title: "Trackpad haptics",
+                             detail: "A light tap when downloads start and finish.")
                 }
             }
-            Spacer(minLength: 12)
-            trailing
-                .frame(minHeight: 26, alignment: .center)
+
+            Section("Updates") {
+                Toggle(isOn: $settings.checkUpdatesOnLaunch) {
+                    RowLabel(title: "Keep Yoink up to date automatically",
+                             detail: "Checks once a day for new versions of Yoink and quietly updates yt-dlp, so downloads keep working when sites change.")
+                }
+                LabeledContent {
+                    HStack(spacing: 10) {
+                        if appUpdate.status == .checking {
+                            ProgressView().controlSize(.small)
+                        }
+                        if case .available = appUpdate.status {
+                            Button("Download Update") { appUpdate.openDownloadPage() }
+                                .buttonStyle(.borderedProminent)
+                        } else {
+                            Button("Check Now") { appUpdate.checkForUpdates() }
+                                .disabled(appUpdate.status == .checking)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Circle().fill(appUpdate.dotColor).frame(width: 7, height: 7)
+                        RowLabel(title: "Yoink \(appVersion)", detail: appUpdate.statusLabel)
+                    }
+                }
+            }
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.primary.opacity(0.06)).frame(height: 0.5)
-                .padding(.leading, 16)
-        }
+        .formStyle(.grouped)
+    }
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     }
 }
 
-// MARK: - Theme Cell
+// MARK: - Appearance
+
+struct AppearanceSettings: View {
+    @EnvironmentObject var settings: SettingsManager
+    @EnvironmentObject var theme:    ThemeManager
+
+    var body: some View {
+        Form {
+            Section {
+                HStack(spacing: 18) {
+                    ForEach(AppTheme.allCases) { t in
+                        ThemeCell(appTheme: t, selected: theme.current == t) {
+                            withAnimation(.spring(response: 0.25)) { theme.set(t) }
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 4)
+                Toggle(isOn: $settings.useBlurBackground) {
+                    RowLabel(title: "Translucent window",
+                             detail: "Let your desktop softly show through the Yoink window. Turn off for a solid background.")
+                }
+            } header: {
+                Text("Theme")
+            } footer: {
+                Text("The accent colour follows System Settings → Appearance.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Menu Bar Icon") {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {
+                    ForEach(MenuBarIcon.presets.filter { $0.kind == .sfSymbol }) { icon in
+                        IconCell(icon: icon, selected: settings.menuBarIconId == icon.id) {
+                            settings.menuBarIconId = icon.id
+                            Haptics.tap()
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+
+                let dyn = MenuBarIcon.presets.first { $0.kind == .dynamic }!
+                Toggle(isOn: Binding(
+                    get: { settings.menuBarIconId == dyn.id },
+                    set: { on in settings.menuBarIconId = on ? dyn.id : MenuBarIcon.presets[0].id }
+                )) {
+                    RowLabel(title: "Show download percentage",
+                             detail: "The icon becomes a live 0–100 counter with a progress ring while downloading.")
+                }
+
+                CustomTextMenuBarRow()
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
 
 struct ThemeCell: View {
     let appTheme: AppTheme
@@ -154,186 +276,57 @@ struct ThemeCell: View {
     let action: () -> Void
     @State private var hovered = false
 
-    var previewScheme: ColorScheme {
-        appTheme.colorScheme
-            ?? (NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light)
+    private var previewDark: Bool {
+        switch appTheme {
+        case .dark:   return true
+        case .light:  return false
+        case .system: return NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        }
     }
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 5) {
-                ZStack {
-                    // Mini window preview using native system colors
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color(previewScheme == .dark ? .windowBackgroundColor : .windowBackgroundColor))
-                        .frame(width: 72, height: 44)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(Color(.separatorColor).opacity(0.6), lineWidth: 1)
-                        )
-                        .overlay(alignment: .topLeading) {
-                            // Fake sidebar + content lines
-                            VStack(alignment: .leading, spacing: 3) {
-                                Circle().fill(Color.accentColor).frame(width: 6, height: 6)
-                                ForEach(0..<3, id: \.self) { i in
-                                    RoundedRectangle(cornerRadius: 1)
-                                        .fill(Color.secondary.opacity(0.35 - Double(i) * 0.08))
-                                        .frame(width: 28 - CGFloat(i) * 4, height: 3)
-                                }
-                            }
-                            .padding(7)
+            VStack(spacing: 7) {
+                ZStack(alignment: .topLeading) {
+                    if appTheme == .system {
+                        HStack(spacing: 0) {
+                            Color(white: 0.96)
+                            Color(white: 0.16)
                         }
-                    if selected {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(Color.accentColor, lineWidth: 2.5)
-                            .frame(width: 72, height: 44)
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Color.accentColor)
-                            .background(Circle().fill(Color(.windowBackgroundColor)).frame(width: 14, height: 14))
-                            .offset(x: 28, y: -16)
+                    } else {
+                        (previewDark ? Color(white: 0.16) : Color(white: 0.96))
                     }
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 3) {
+                            ForEach([Color.red, .yellow, .green], id: \.self) { c in
+                                Circle().fill(c.opacity(0.85)).frame(width: 5, height: 5)
+                            }
+                        }
+                        RoundedRectangle(cornerRadius: 2).fill(Color.accentColor).frame(width: 34, height: 5)
+                        RoundedRectangle(cornerRadius: 2).fill(Color.gray.opacity(0.45)).frame(width: 46, height: 4)
+                        RoundedRectangle(cornerRadius: 2).fill(Color.gray.opacity(0.3)).frame(width: 28, height: 4)
+                    }
+                    .padding(8)
                 }
+                .frame(width: 88, height: 58)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.12),
+                                      lineWidth: selected ? 2.5 : 0.5)
+                )
+                .shadow(color: .black.opacity(hovered ? 0.12 : 0.05), radius: hovered ? 5 : 2, y: 1)
+
                 Text(appTheme.rawValue)
-                    .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                    .font(.system(size: 11.5, weight: selected ? .semibold : .regular))
                     .foregroundStyle(selected ? Color.primary : Color.secondary)
             }
         }
         .buttonStyle(.plain)
-        .scaleEffect(hovered ? 1.03 : 1.0)
-        .animation(.spring(response: 0.18, dampingFraction: 0.7), value: hovered)
         .onHover { hovered = $0 }
-    }
-}
-
-// MARK: - Appearance Settings
-
-struct AppearanceSettings: View {
-    @EnvironmentObject var settings: SettingsManager
-    @EnvironmentObject var theme:    ThemeManager
-    var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
-
-                // ── Background / materials ─────────────────────────────
-                SettingsGroup(title: "Materials") {
-                    SettingsRow("Liquid Glass chrome",
-                                detail: "Floating header, toolbar, and cards use macOS 26 glass. Turn off for solid surfaces.",
-                                icon: "sparkles") {
-                        Toggle("", isOn: $settings.useBlurBackground)
-                            .labelsHidden()
-                    }
-                }
-
-                // ── Theme ─────────────────────────────────────────────────
-                SettingsGroup(title: "Appearance") {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Follow your Mac, or force light/dark. Accent color always comes from System Settings.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                            .padding(.horizontal, 14).padding(.top, 12)
-                        HStack(spacing: 16) {
-                            ForEach(AppTheme.allCases) { t in
-                                ThemeCell(appTheme: t, selected: theme.current == t) {
-                                    withAnimation(.spring(response: 0.2)) { theme.set(t) }
-                                }
-                            }
-                            Spacer()
-                        }
-                        .padding(.horizontal, 14).padding(.bottom, 14).padding(.top, 8)
-                    }
-                    Divider().opacity(0)
-                }
-
-                SettingsGroup(title: "Menu Bar Icon") {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Choose what appears in your menu bar")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 60, maximum: 90), spacing: 0), count: 3), spacing: 10) {
-                            ForEach(MenuBarIcon.presets.filter { $0.kind == .sfSymbol }) { icon in
-                                IconCell(icon: icon, selected: settings.menuBarIconId == icon.id) {
-                                    settings.menuBarIconId = icon.id
-                                    Haptics.tap()
-                                }
-                            }
-                        }
-
-                        // Dynamic numeric counter option - full-width special cell
-                        let dynIcon = MenuBarIcon.presets.first { $0.kind == .dynamic }!
-                        let dynSelected = settings.menuBarIconId == dynIcon.id
-                        Button {
-                            settings.menuBarIconId = dynIcon.id
-                            Haptics.tap()
-                        } label: {
-                            HStack(spacing: 12) {
-                                ZStack {
-                                    Circle().stroke(Color.accentColor.opacity(0.3), lineWidth: 1.5).frame(width: 28)
-                                    Circle().trim(from: 0, to: 0.6)
-                                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                                        .frame(width: 28).rotationEffect(.degrees(-90))
-                                    Text("60")
-                                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(Color.accentColor)
-                                }
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Download progress  -  0 to 100")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(dynSelected ? Color.accentColor : .primary)
-                                    Text("Shows live percentage with progress ring")
-                                        .font(.system(size: 10.5))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if dynSelected {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(Color.accentColor)
-                                }
-                            }
-                            .padding(.horizontal, 12).padding(.vertical, 10)
-                            .background(dynSelected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.04))
-                            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .strokeBorder(dynSelected ? Color.accentColor.opacity(0.4) : Color(.separatorColor).opacity(0.4), lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-
-                        // Custom text label (e.g. initials, short word, up to 4 chars)
-                        CustomTextMenuBarRow()
-                    }
-                    .padding(14)
-                    Divider().opacity(0)
-                }
-
-                // ── Display ───────────────────────────────────────────
-                SettingsGroup(title: "Display") {
-                    SettingsRow("Show in Dock",
-                                detail: "App appears in the Dock alongside menu bar",
-                                icon: "square.grid.3x3.square") {
-                        Toggle("", isOn: $settings.showInDock)
-                            .labelsHidden()
-                            .onChange(of: settings.showInDock) { show in
-                                if show {
-                                    // Re-show in dock immediately when turned back on
-                                    NSApp.setActivationPolicy(.regular)
-                                }
-                                // When turned off, dock icon disappears when window is next closed
-                                // (handled in AppDelegate.windowWillClose)
-                            }
-                    }
-                }
-
-                // ── Haptics ───────────────────────────────────────────────
-                SettingsGroup(title: "Haptic Feedback") {
-                    SettingsRow("Enable haptics",
-                                detail: "Off by default — native macOS apps don't use trackpad haptics",
-                                icon: "hand.point.up.left") {
-                        Toggle("", isOn: $settings.hapticsEnabled).labelsHidden()
-                    }
-                }
-            }
-            .padding(20)
-        }
-        .navigationTitle("Appearance")
+        .animation(.easeOut(duration: 0.15), value: hovered)
+        .accessibilityLabel("\(appTheme.rawValue) appearance")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
 
@@ -345,140 +338,142 @@ struct IconCell: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 5) {
+            VStack(spacing: 4) {
                 Group {
                     if icon.kind == .emoji {
-                        Text(icon.value).font(.system(size: 22))
+                        Text(icon.value).font(.system(size: 18))
                     } else {
-                        Image(systemName: icon.value)
-                            .font(.system(size: 20))
-                            .foregroundStyle(selected ? Color.accentColor : Color.primary.opacity(0.75))
+                        Image(systemName: icon.value).font(.system(size: 16, weight: .medium))
                     }
                 }
-                .frame(width: 44, height: 38)
+                .foregroundStyle(selected ? Color.accentColor : Color.primary.opacity(0.8))
+                .frame(maxWidth: .infinity)
+                .frame(height: 36)
                 .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(selected ? Color.accentColor.opacity(0.13)
-                                       : (hovered ? Color.primary.opacity(0.06) : Color.clear))
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(selected ? Color.accentColor.opacity(0.14)
+                                       : Color.primary.opacity(hovered ? 0.08 : 0.04))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(selected ? Color.accentColor.opacity(0.45) : Color.clear, lineWidth: 1.5)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(selected ? Color.accentColor.opacity(0.55) : .clear, lineWidth: 1.5)
                 )
-
                 Text(icon.label)
-                    .font(.system(size: 9))
+                    .font(.system(size: 9.5))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            .frame(maxWidth: .infinity)  // stretch to fill grid column evenly
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
-
         .help(icon.label)
         .animation(.easeOut(duration: 0.1), value: hovered)
     }
 }
 
-// MARK: - Download Settings
-
-struct DownloadSettings: View {
+struct CustomTextMenuBarRow: View {
     @EnvironmentObject var settings: SettingsManager
+    @State private var customText = ""
+    private var isActive: Bool { settings.menuBarIconId.hasPrefix("text_") }
+
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
-
-                SettingsGroup(title: "Defaults") {
-                    SettingsRow("Default format", icon: "film") {
-                        Picker("", selection: $settings.defaultFormatRaw) {
-                            ForEach(DownloadFormat.allCases) { f in
-                                Label(f.displayName, systemImage: f.icon).tag(f.rawValue)
-                            }
-                        }
-                        .labelsHidden().pickerStyle(.menu).frame(width: 180)
+        LabeledContent {
+            HStack(spacing: 8) {
+                TextField("", text: $customText, prompt: Text("YK"))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .multilineTextAlignment(.center)
+                    .frame(width: 64)
+                    .onChange(of: customText) { v in
+                        if v.count > 4 { customText = String(v.prefix(4)) }
                     }
-                    SettingsDivider()
-                    SettingsRow("After download", icon: "checkmark.circle") {
-                        Picker("", selection: $settings.postDownloadRaw) {
-                            ForEach(PostDownloadAction.allCases) { a in
-                                Label(a.label, systemImage: a.icon).tag(a.rawValue)
-                            }
-                        }
-                        .labelsHidden().pickerStyle(.menu).frame(width: 180)
-                    }
-                    SettingsDivider()
-                    SettingsRow("Convert after download", detail: "Uses bundled ffmpeg - runs after every download", icon: "arrow.triangle.2.circlepath") {
-                        Picker("", selection: $settings.postConvertRaw) {
-                            ForEach(PostConvertAction.allCases) { a in
-                                Label(a.label, systemImage: a.icon).tag(a.rawValue)
-                            }
-                        }
-                        .labelsHidden().pickerStyle(.menu).frame(width: 200)
-                    }
-                    SettingsDivider()
-                    SettingsRow("Concurrent downloads", icon: "arrow.down.to.line.alt") {
-                        Picker("", selection: $settings.concurrentLimitRaw) {
-                            ForEach(ConcurrentLimit.allCases) { l in Text(l.label).tag(l.rawValue) }
-                        }
-                        .labelsHidden().pickerStyle(.menu).frame(width: 180)
-                    }
+                    .onSubmit(apply)
+                Button(isActive && customText == String(settings.menuBarIconId.dropFirst(5)) ? "In Use" : "Use") {
+                    apply()
                 }
-
-                SettingsGroup(title: "Subtitles") {
-                    SettingsRow("Default language", detail: "Prefilled when subtitle toggle is on", icon: "captions.bubble") {
-                        TextField("en", text: $settings.defaultSubLang)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 13, design: .monospaced))
-                            .frame(width: 44).multilineTextAlignment(.center)
-                            .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(Color.primary.opacity(0.06))
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    }
-                    SettingsDivider()
-                    SettingsRow("Sync subs with SponsorBlock", detail: "Embeds subtitles so timestamps stay aligned after cuts", icon: "scissors") {
-                        Text("Auto").font(.system(size: 11)).foregroundStyle(.secondary)
-                    }
-                }
-
-                SettingsGroup(title: "Post-processing") {
-                    SettingsRow("Embed thumbnail", icon: "photo.badge.plus") {
-                        Toggle("", isOn: $settings.embedThumbnail).labelsHidden()
-                    }
-                    SettingsDivider()
-                    SettingsRow("Write metadata tags", icon: "tag") {
-                        Toggle("", isOn: $settings.addMetadata).labelsHidden()
-                    }
-                    SettingsDivider()
-                    SettingsRow("SponsorBlock", detail: "Skip sponsored segments automatically", icon: "scissors") {
-                        Toggle("", isOn: $settings.sponsorBlock).labelsHidden()
-                    }
-                }
-
-                SettingsGroup(title: "Notifications") {
-                    SettingsRow(
-                        "Notify when queue finishes",
-                        detail: "One notification when all downloads complete, instead of one per file",
-                        icon: "bell.badge"
-                    ) {
-                        Toggle("", isOn: $settings.notifyOnQueueComplete).labelsHidden()
-                    }
-                }
-
-                SiteFormatOverridesEditor()
-                    .environmentObject(settings)
+                .disabled(customText.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            .padding(20)
+        } label: {
+            RowLabel(title: "Custom text or emoji", detail: "Up to 4 characters, e.g. your initials or 🎬.")
         }
+        .onAppear {
+            if isActive { customText = String(settings.menuBarIconId.dropFirst(5)) }
+        }
+    }
+
+    private func apply() {
+        let t = customText.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty else { return }
+        settings.menuBarIconId = "text_\(t)"
+        Haptics.tap()
     }
 }
 
-// MARK: - Per-site format override editor
+// MARK: - Downloads
 
-struct SiteFormatOverridesEditor: View {
+struct DownloadSettings: View {
     @EnvironmentObject var settings: SettingsManager
 
-    // Suggested sites shown as quick-add chips
+    var body: some View {
+        Form {
+            Section("Defaults for New Downloads") {
+                Picker(selection: $settings.defaultFormatRaw) {
+                    ForEach(DownloadFormat.allCases) { f in
+                        Text(f.displayName).tag(f.rawValue)
+                    }
+                } label: {
+                    RowLabel(title: "Format", detail: "You can still change it for each download.")
+                }
+                Picker("Download at the same time", selection: $settings.concurrentLimitRaw) {
+                    ForEach(ConcurrentLimit.allCases) { l in Text(l.label).tag(l.rawValue) }
+                }
+                Picker("When a download finishes", selection: $settings.postDownloadRaw) {
+                    ForEach(PostDownloadAction.allCases) { a in Text(a.label).tag(a.rawValue) }
+                }
+                Toggle(isOn: $settings.notifyOnQueueComplete) {
+                    RowLabel(title: "Notify once when everything is done",
+                             detail: "One notification when the whole queue finishes, instead of one per file.")
+                }
+            }
+
+            Section("Subtitles") {
+                Toggle("Download subtitles by default", isOn: $settings.autoDownloadSubs)
+                LabeledContent {
+                    TextField("", text: $settings.defaultSubLang, prompt: Text("en"))
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                        .multilineTextAlignment(.center)
+                        .frame(width: 70)
+                } label: {
+                    RowLabel(title: "Preferred language",
+                             detail: "Language code such as en, es or ja. Used whenever the video has it.")
+                }
+            }
+
+            Section {
+                Toggle(isOn: $settings.sponsorBlock) {
+                    RowLabel(title: "Skip sponsor segments",
+                             detail: "Cuts sponsors, self-promotion and \"like & subscribe\" reminders using SponsorBlock.")
+                }
+            } header: {
+                Text("SponsorBlock")
+            } footer: {
+                Text("Subtitles are re-timed automatically so they stay in sync after cuts.")
+                    .foregroundStyle(.secondary)
+            }
+
+            SiteFormatOverridesSection()
+        }
+        .formStyle(.grouped)
+    }
+}
+
+/// Per-site default formats — e.g. always grab audio from SoundCloud.
+struct SiteFormatOverridesSection: View {
+    @EnvironmentObject var settings: SettingsManager
+    @State private var customDomain = ""
+    @State private var addingCustom = false
+
     private let suggestedSites: [(domain: String, label: String)] = [
         ("youtube.com",    "YouTube"),
         ("soundcloud.com", "SoundCloud"),
@@ -490,167 +485,75 @@ struct SiteFormatOverridesEditor: View {
         ("reddit.com",     "Reddit"),
     ]
 
-    @State private var customDomain = ""
-    @State private var addingCustom  = false
-
     var body: some View {
-        SettingsGroup(title: "Per-site default format") {
-            VStack(alignment: .leading, spacing: 0) {
-
-                // Header hint
-                Text("Override the default format for specific sites. Only applied when you haven't manually chosen a format for that download.")
-                    .font(.system(size: 11))
+        let overrides = settings.siteFormatOverrides
+        Section {
+            if overrides.isEmpty {
+                Text("No site rules yet.")
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 14)
-                    .padding(.top, 12)
-                    .padding(.bottom, 10)
-
-                // Existing overrides
-                let overrides = settings.siteFormatOverrides
-                if !overrides.isEmpty {
-                    Divider().opacity(0.07)
-                    VStack(spacing: 0) {
-                        ForEach(Array(overrides.keys.sorted().enumerated()), id: \.element) { idx, domain in
-                            let formatRaw = overrides[domain] ?? DownloadFormat.best.rawValue
-                            HStack(spacing: 10) {
-                                // Domain label
-                                Text(displayLabel(for: domain))
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(.primary)
-                                    .frame(minWidth: 120, alignment: .leading)
-
-                                Spacer()
-
-                                // Format picker for this site
-                                Picker("", selection: Binding(
-                                    get: { formatRaw },
-                                    set: { newVal in
-                                        var dict = settings.siteFormatOverrides
-                                        dict[domain] = newVal
-                                        settings.siteFormatOverrides = dict
-                                    }
-                                )) {
-                                    ForEach(DownloadFormat.allCases) { f in
-                                        Label(f.displayName, systemImage: f.icon).tag(f.rawValue)
-                                    }
-                                }
-                                .labelsHidden()
-                                .pickerStyle(.menu)
-                                .frame(width: 180)
-
-                                // Remove button
-                                Button {
-                                    var dict = settings.siteFormatOverrides
-                                    dict.removeValue(forKey: domain)
-                                    settings.siteFormatOverrides = dict
-                                } label: {
-                                    Image(systemName: "minus.circle.fill")
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(.secondary.opacity(0.5))
-                                }
-                                .buttonStyle(.plain)
-                                .help("Remove override for \(domain)")
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 9)
-                            .background(idx % 2 == 0 ? Color.clear : Color.primary.opacity(0.02))
-
-                            if idx < overrides.count - 1 {
-                                Divider().opacity(0.06).padding(.horizontal, 14)
-                            }
-                        }
-                    }
-                }
-
-                // Add-site section
-                Divider().opacity(0.07)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Add Site")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-
-                    // Quick-add chips for common sites
-                    let existing = settings.siteFormatOverrides
-                    FlowLayout(spacing: 6) {
-                        ForEach(suggestedSites.filter { existing[$0.domain] == nil }, id: \.domain) { site in
-                            Button {
-                                var dict = settings.siteFormatOverrides
-                                dict[site.domain] = settings.defaultFormatRaw
-                                settings.siteFormatOverrides = dict
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "plus")
-                                        .font(.system(size: 9, weight: .semibold))
-                                    Text(site.label)
-                                        .font(.system(size: 11, weight: .medium))
-                                }
-                                .foregroundStyle(Color.accentColor)
-                                .padding(.horizontal, 9).padding(.vertical, 5)
-                                .background(Color.accentColor.opacity(0.08))
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                                .overlay(RoundedRectangle(cornerRadius: 6)
-                                    .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.5))
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        // Custom domain input
-                        if addingCustom {
-                            HStack(spacing: 5) {
-                                TextField("e.g. bilibili.com", text: $customDomain)
-                                    .textFieldStyle(.plain)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .frame(width: 130)
-                                    .onSubmit { commitCustomDomain() }
-
-                                Button { commitCustomDomain() } label: {
-                                    Image(systemName: "return")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.green)
-                                }
-                                .buttonStyle(.plain)
-
-                                Button { addingCustom = false; customDomain = "" } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 9))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding(.horizontal, 9).padding(.vertical, 5)
-                            .background(Color.primary.opacity(0.05))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                            .overlay(RoundedRectangle(cornerRadius: 6)
-                                .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
-                        } else {
-                            Button {
-                                addingCustom = true
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "plus")
-                                        .font(.system(size: 9, weight: .semibold))
-                                    Text("Custom…")
-                                        .font(.system(size: 11, weight: .medium))
-                                }
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 9).padding(.vertical, 5)
-                                .background(Color.primary.opacity(0.05))
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                                .overlay(RoundedRectangle(cornerRadius: 6)
-                                    .strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
             }
+            ForEach(overrides.keys.sorted(), id: \.self) { domain in
+                HStack(spacing: 8) {
+                    Picker(displayLabel(for: domain), selection: Binding(
+                        get: { overrides[domain] ?? DownloadFormat.best.rawValue },
+                        set: { newVal in
+                            var dict = settings.siteFormatOverrides
+                            dict[domain] = newVal
+                            settings.siteFormatOverrides = dict
+                        }
+                    )) {
+                        ForEach(DownloadFormat.allCases) { f in Text(f.displayName).tag(f.rawValue) }
+                    }
+                    Button {
+                        var dict = settings.siteFormatOverrides
+                        dict.removeValue(forKey: domain)
+                        settings.siteFormatOverrides = dict
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove the rule for \(domain)")
+                }
+            }
+
+            if addingCustom {
+                HStack(spacing: 8) {
+                    TextField("", text: $customDomain, prompt: Text("e.g. bilibili.com"))
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.leading)
+                        .labelsHidden()
+                        .onSubmit(commitCustomDomain)
+                    Button("Add", action: commitCustomDomain)
+                        .disabled(customDomain.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("Cancel") { addingCustom = false; customDomain = "" }
+                }
+            } else {
+                Menu("Add Site") {
+                    ForEach(suggestedSites.filter { overrides[$0.domain] == nil }, id: \.domain) { site in
+                        Button(site.label) { add(site.domain) }
+                    }
+                    Divider()
+                    Button("Other Site…") { addingCustom = true }
+                }
+                .fixedSize()
+            }
+        } header: {
+            Text("Per-Site Formats")
+        } footer: {
+            Text("Used instead of the default format for these sites, unless you pick a format yourself.")
+                .foregroundStyle(.secondary)
         }
     }
 
     private func displayLabel(for domain: String) -> String {
         suggestedSites.first { $0.domain == domain }?.label ?? domain
+    }
+
+    private func add(_ domain: String) {
+        var dict = settings.siteFormatOverrides
+        dict[domain] = settings.defaultFormatRaw
+        settings.siteFormatOverrides = dict
     }
 
     private func commitCustomDomain() {
@@ -660,125 +563,146 @@ struct SiteFormatOverridesEditor: View {
             .replacingOccurrences(of: "https://", with: "")
             .replacingOccurrences(of: "http://", with: "")
             .replacingOccurrences(of: "www.", with: "")
+            .components(separatedBy: "/").first ?? ""
         guard !d.isEmpty else { addingCustom = false; return }
-        var dict = settings.siteFormatOverrides
-        dict[d] = settings.defaultFormatRaw
-        settings.siteFormatOverrides = dict
+        add(d)
         customDomain = ""
         addingCustom = false
     }
 }
 
-// MARK: - Output Settings
+// MARK: - Files & Folders
 
 struct OutputSettings: View {
     @EnvironmentObject var settings: SettingsManager
-    var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
-
-                SettingsGroup(title: "File Naming") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Output filename template").font(.system(size: 13))
-                        TextField("%(title)s.%(ext)s", text: $settings.outputTemplate)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 12, design: .monospaced))
-                            .padding(.horizontal, 10).padding(.vertical, 8)
-                            .background(Color.primary.opacity(0.05))
-                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
-                        TemplateTokens(template: $settings.outputTemplate)
-                    }
-                    .padding(14)
-                    Divider().opacity(0)
-                }
-
-                SettingsGroup(title: "File Handling") {
-                    SettingsRow("Avoid overwriting files",
-                                detail: "Adds a number suffix if file exists",
-                                icon: "doc.badge.plus") {
-                        Toggle("", isOn: $settings.avoidOverwrite).labelsHidden()
-                    }
-                    SettingsDivider()
-                    SettingsRow("Keep partial downloads",
-                                detail: "Useful for resuming interrupted downloads",
-                                icon: "stop.circle") {
-                        Toggle("", isOn: $settings.keepPartialFiles).labelsHidden()
-                    }
-                }
-
-                OutputCategoryEditor()
-            }
-            .padding(20)
-        }
-    }
-}
-
-// MARK: - Output Category Editor
-
-struct OutputCategoryEditor: View {
-    @EnvironmentObject var settings: SettingsManager
-    @State private var categories: [OutputCategory] = []
+    @EnvironmentObject var queue: DownloadQueue
 
     var body: some View {
-        SettingsGroup(title: "Save Location Categories") {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Set a dedicated folder for each content type. Pick a category when downloading to auto-route files.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-
-                VStack(spacing: 6) {
-                    ForEach(categories.indices, id: \.self) { i in
-                        OutputCategoryRow(
-                            category: $categories[i],
-                            onPickFolder: { pickFolder(for: i) },
-                            onDelete: {
-                                withAnimation { _ = categories.remove(at: i) }
-                                settings.outputCategories = categories
-                            }
-                        )
-                        .environmentObject(settings)
+        Form {
+            Section("Download Folder") {
+                LabeledContent {
+                    HStack(spacing: 8) {
+                        Button("Show in Finder") {
+                            queue.ensureOutputDir()
+                            NSWorkspace.shared.open(queue.outputDirectory)
+                        }
+                        Button("Change…") { pickFolder() }
                     }
-                }
-
-                Button {
-                    withAnimation { categories.append(OutputCategory(name: "New Category", emoji: "📁", path: "")) }
-                    settings.outputCategories = categories
-                    Haptics.tap()
                 } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "plus.circle.fill").font(.system(size: 12))
-                        Text("Add Category").font(.system(size: 12, weight: .medium))
+                    HStack(spacing: 8) {
+                        Image(nsImage: NSWorkspace.shared.icon(forFile: queue.outputDirectory.path))
+                            .resizable().frame(width: 20, height: 20)
+                        RowLabel(title: queue.outputDirectory.lastPathComponent,
+                                 detail: (queue.outputDirectory.path as NSString).abbreviatingWithTildeInPath)
                     }
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Color.accentColor.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
                 }
-                .buttonStyle(.plain)
+                Toggle(isOn: $settings.autoOrganizeBySite) {
+                    RowLabel(title: "Sort into site folders",
+                             detail: "Saves into subfolders such as YouTube/ and Twitch/.")
+                }
             }
-            .padding(14)
-            Divider().opacity(0)
+
+            OutputCategoriesSection()
+
+            Section("File Names") {
+                TextField(text: $settings.outputTemplate, prompt: Text("%(title)s.%(ext)s")) {
+                    Text("Template")
+                }
+                .font(.system(.body, design: .monospaced))
+                TemplateTokens(template: $settings.outputTemplate)
+            }
+
+            Section("After Downloading") {
+                Toggle("Embed thumbnail as cover art", isOn: $settings.embedThumbnail)
+                Toggle("Write title, artist and chapter tags", isOn: $settings.addMetadata)
+                Picker(selection: $settings.postConvertRaw) {
+                    ForEach(PostConvertAction.allCases) { a in Text(a.label).tag(a.rawValue) }
+                } label: {
+                    RowLabel(title: "Convert", detail: "Runs with the bundled ffmpeg after every download.")
+                }
+                Toggle(isOn: $settings.avoidOverwrite) {
+                    RowLabel(title: "Never overwrite existing files",
+                             detail: "Skips a download when a file with the same name already exists.")
+                }
+                Toggle(isOn: $settings.keepPartialFiles) {
+                    RowLabel(title: "Keep partial downloads",
+                             detail: "Leaves unfinished pieces on disk so an interrupted download can resume.")
+                }
+            }
         }
-        .onAppear { categories = settings.outputCategories }
+        .formStyle(.grouped)
     }
 
-    // Use NSOpenPanel directly - avoids the NSRendezvousSheetDelegate crash
-    // that occurs when SwiftUI's .fileImporter tries to attach a sheet to
-    // the Settings panel window (which has a different delegate chain).
-    private func pickFolder(for index: Int) {
+    private func pickFolder() {
         let panel = NSOpenPanel()
-        panel.title          = "Choose folder for \(categories[index].name)"
+        panel.title = "Choose Download Folder"
+        panel.prompt = "Choose"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
-        // Run as a free-floating panel, not attached to any window
+        panel.directoryURL = queue.outputDirectory
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
+            let accessing = url.startAccessingSecurityScopedResource()
+            queue.outputDirectory = url
+            if accessing { url.stopAccessingSecurityScopedResource() }
+        }
+    }
+}
+
+/// Named folders ("🎵 Music", "🎓 Educational") you can switch to from the save-location menu.
+struct OutputCategoriesSection: View {
+    @EnvironmentObject var settings: SettingsManager
+    @State private var categories: [OutputCategory] = []
+
+    var body: some View {
+        Section {
+            ForEach($categories) { $category in
+                OutputCategoryRow(
+                    category: $category,
+                    onPickFolder: { pickFolder(for: category.id) },
+                    onDelete: {
+                        categories.removeAll { $0.id == category.id }
+                        save()
+                    },
+                    onCommit: save
+                )
+            }
+            Button {
+                categories.append(OutputCategory(name: "New Category", emoji: "📁", path: ""))
+                save()
+                Haptics.tap()
+            } label: {
+                Label("Add Category", systemImage: "plus")
+            }
+        } header: {
+            Text("Save Categories")
+        } footer: {
+            Text("Categories with a folder appear in the save-location menu in the main window and menu bar.")
+                .foregroundStyle(.secondary)
+        }
+        .onAppear { categories = settings.outputCategories }
+    }
+
+    private func save() { settings.outputCategories = categories }
+
+    // NSOpenPanel directly — .fileImporter can crash when attached to the Settings window.
+    private func pickFolder(for id: UUID) {
+        guard let index = categories.firstIndex(where: { $0.id == id }) else { return }
+        let panel = NSOpenPanel()
+        panel.title = "Choose folder for \(categories[index].name)"
+        panel.prompt = "Choose"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let url = panel.url,
+                  let i = categories.firstIndex(where: { $0.id == id }) else { return }
             _ = url.startAccessingSecurityScopedResource()
-            categories[index].path = url.path
-            settings.outputCategories = categories
+            categories[i].path = url.path
+            save()
         }
     }
 }
@@ -787,200 +711,117 @@ struct OutputCategoryRow: View {
     @Binding var category: OutputCategory
     let onPickFolder: () -> Void
     let onDelete: () -> Void
-    @EnvironmentObject var settings: SettingsManager
+    let onCommit: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
             TextField("", text: $category.emoji)
-                .textFieldStyle(.plain)
-                .font(.system(size: 18))
+                .textFieldStyle(.roundedBorder)
                 .multilineTextAlignment(.center)
-                .frame(width: 36, height: 32)
-                .background(Color.primary.opacity(0.05))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5))
+                .frame(width: 42)
                 .onChange(of: category.emoji) { v in
                     guard !v.isEmpty else { return }
                     var idx = v.startIndex; v.formIndex(after: &idx)
                     let first = String(v[v.startIndex..<idx])
                     if category.emoji != first { category.emoji = first }
-                    settings.outputCategories = settings.outputCategories.map {
-                        $0.id == category.id ? category : $0
-                    }
+                    onCommit()
                 }
-
-            TextField("Category name", text: $category.name)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12, weight: .medium))
-                .frame(width: 110)
-                .onSubmit {
-                    settings.outputCategories = settings.outputCategories.map {
-                        $0.id == category.id ? category : $0
-                    }
-                }
-
+            TextField("", text: $category.name, prompt: Text("Name"))
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.leading)
+                .frame(width: 140)
+                .onChange(of: category.name) { _ in onCommit() }
             Button(action: onPickFolder) {
-                HStack(spacing: 4) {
-                    Image(systemName: "folder").font(.system(size: 10))
-                    Text(category.path.isEmpty ? "Choose folder…" : URL(fileURLWithPath: category.path).lastPathComponent)
-                        .font(.system(size: 11))
-                        .lineLimit(1).truncationMode(.middle)
-                }
-                .foregroundStyle(category.path.isEmpty ? Color.secondary : Color.primary)
-                .padding(.horizontal, 8).padding(.vertical, 5)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.04))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5))
+                Label(category.path.isEmpty ? "Choose Folder…" : URL(fileURLWithPath: category.path).lastPathComponent,
+                      systemImage: "folder")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
             .help(category.path.isEmpty ? "Choose a folder" : category.path)
-
             Button(action: onDelete) {
-                Image(systemName: "minus.circle.fill")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.red.opacity(0.6))
+                Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .help("Remove category")
         }
+        .labelsHidden()
     }
 }
 
 struct TemplateTokens: View {
     @Binding var template: String
 
-    let tokens: [(token: String, label: String, icon: String, example: String)] = [
-        ("%(title)s",       "Title",       "text.quote",             "My Awesome Video"),
-        ("%(id)s",          "Video ID",    "number",                 "dQw4w9WgXcQ"),
-        ("%(ext)s",         "Extension",   "doc",                    "mp4"),
-        ("%(uploader)s",    "Channel",     "person",                 "Rick Astley"),
-        ("%(upload_date)s", "Upload Date", "calendar",               "20231215"),
-        ("%(resolution)s",  "Resolution",  "arrow.up.left.and.arrow.down.right", "1920x1080"),
-        ("%(duration_string)s", "Duration","clock",                  "3:33"),
-        ("%(playlist_index)s",  "Playlist #","list.number",          "03"),
+    private let tokens: [(token: String, label: String)] = [
+        ("%(title)s", "Title"), ("%(uploader)s", "Channel"), ("%(upload_date)s", "Upload Date"),
+        ("%(id)s", "Video ID"), ("%(resolution)s", "Resolution"), ("%(duration_string)s", "Duration"),
+        ("%(playlist_index)s", "Playlist #"), ("%(ext)s", "Extension"),
+    ]
+
+    private let presets: [(label: String, value: String)] = [
+        ("Title", "%(title)s.%(ext)s"),
+        ("Date – Title", "%(upload_date)s - %(title)s.%(ext)s"),
+        ("Channel/Date – Title", "%(uploader)s/%(upload_date)s - %(title)s.%(ext)s"),
+        ("ID – Title", "%(id)s - %(title)s.%(ext)s"),
     ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Tap a token to insert it at the cursor")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-
-            // Live preview
-            if !template.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "eye").font(.system(size: 10)).foregroundStyle(.secondary)
-                    Text(previewTemplate(template))
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1).truncationMode(.middle)
-                }
-                .padding(.horizontal, 8).padding(.vertical, 5)
-                .background(Color.primary.opacity(0.04))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
-
-            // Token grid
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 140), spacing: 8), count: 2), spacing: 8) {
-                ForEach(tokens, id: \.token) { t in
-                    TokenChip(token: t.token, label: t.label, icon: t.icon, example: t.example) {
-                        template += t.token
-                        Haptics.tap()
-                    }
-                }
-            }
-
-            // Quick presets
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Quick Presets")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                HStack(spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "doc")
+                    .foregroundStyle(.secondary)
+                Text(preview)
+                    .font(.system(.callout, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 8)
+                Menu("Presets") {
                     ForEach(presets, id: \.label) { p in
-                        Button {
-                            template = p.value
-                            Haptics.tap()
-                        } label: {
-                            Text(p.label)
-                                .font(.system(size: 10.5, weight: .medium))
-                                .foregroundStyle(template == p.value ? Color.accentColor : .secondary)
-                                .padding(.horizontal, 8).padding(.vertical, 4)
-                                .background(template == p.value
-                                    ? Color.accentColor.opacity(0.1)
-                                    : Color.primary.opacity(0.05))
-                                .clipShape(RoundedRectangle(cornerRadius: 5))
-                                .overlay(RoundedRectangle(cornerRadius: 5)
-                                    .strokeBorder(template == p.value
-                                        ? Color.accentColor.opacity(0.3)
-                                        : Color(.separatorColor).opacity(0.4), lineWidth: 0.5))
-                        }
-                        .buttonStyle(.plain)
-
-                        .help(p.value)
+                        Button(p.label) { template = p.value }
                     }
                 }
+                .fixedSize()
             }
-        }
-    }
-
-    let presets: [(label: String, value: String)] = [
-        ("Default",   "%(title)s.%(ext)s"),
-        ("With date", "%(upload_date)s - %(title)s.%(ext)s"),
-        ("Organised", "%(uploader)s/%(upload_date)s - %(title)s.%(ext)s"),
-        ("ID + title","%(id)s - %(title)s.%(ext)s"),
-    ]
-
-    func previewTemplate(_ t: String) -> String {
-        t.replacingOccurrences(of: "%(title)s",           with: "My Awesome Video")
-         .replacingOccurrences(of: "%(id)s",              with: "dQw4w9WgXcQ")
-         .replacingOccurrences(of: "%(ext)s",             with: "mp4")
-         .replacingOccurrences(of: "%(uploader)s",        with: "Rick Astley")
-         .replacingOccurrences(of: "%(upload_date)s",     with: "20231215")
-         .replacingOccurrences(of: "%(resolution)s",      with: "1920x1080")
-         .replacingOccurrences(of: "%(duration_string)s", with: "3:33")
-         .replacingOccurrences(of: "%(playlist_index)s",  with: "03")
-    }
-}
-
-struct TokenChip: View {
-    let token: String; let label: String; let icon: String; let example: String
-    let action: () -> Void
-    @State private var hovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 7) {
-                Image(systemName: icon)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 16)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(label)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.primary)
-                    Text(token)
-                        .font(.system(size: 9.5, design: .monospaced))
-                        .foregroundStyle(Color.accentColor.opacity(0.8))
-                }
-                Spacer(minLength: 0)
-                if hovered {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.accentColor.opacity(0.7))
-                        .transition(.scale.combined(with: .opacity))
+            FlowLayout(spacing: 6) {
+                ForEach(tokens, id: \.token) { t in
+                    Button {
+                        insert(t.token)
+                    } label: {
+                        Label(t.label, systemImage: "plus")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .padding(.horizontal, 8).frame(height: 22)
+                            .background(Capsule().fill(Color.accentColor.opacity(0.1)))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Insert \(t.token)")
                 }
             }
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(hovered ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(hovered ? Color.accentColor.opacity(0.3) : Color(.separatorColor).opacity(0.3), lineWidth: 0.5))
         }
-        .buttonStyle(.plain)
-        .onHover { hovered = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovered)
-        .help("Insert \(token)  (example: \(example))")
+        .padding(.vertical, 2)
+    }
+
+    /// Adds a token before the extension so the name stays valid.
+    private func insert(_ token: String) {
+        if token == "%(ext)s" || !template.hasSuffix(".%(ext)s") {
+            template += token
+        } else {
+            template = String(template.dropLast(".%(ext)s".count)) + " " + token + ".%(ext)s"
+        }
+        Haptics.tap()
+    }
+
+    private var preview: String {
+        (template.isEmpty ? "%(title)s.%(ext)s" : template)
+            .replacingOccurrences(of: "%(title)s",           with: "My Video")
+            .replacingOccurrences(of: "%(id)s",              with: "dQw4w9WgXcQ")
+            .replacingOccurrences(of: "%(ext)s",             with: "mp4")
+            .replacingOccurrences(of: "%(uploader)s",        with: "Channel")
+            .replacingOccurrences(of: "%(upload_date)s",     with: "20260930")
+            .replacingOccurrences(of: "%(resolution)s",      with: "1920x1080")
+            .replacingOccurrences(of: "%(duration_string)s", with: "3:33")
+            .replacingOccurrences(of: "%(playlist_index)s",  with: "03")
     }
 }
 
@@ -1008,931 +849,124 @@ struct FlowLayout: Layout {
     }
 }
 
-// MARK: - Network Settings
-
-struct NetworkSettings: View {
-    @EnvironmentObject var settings: SettingsManager
-    @State private var rateLimitText = ""
-    var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
-
-                SettingsGroup(title: "Bandwidth") {
-                    SettingsRow("Rate limit", detail: "0 = unlimited", icon: "speedometer") {
-                        HStack(spacing: 6) {
-                            TextField("0", text: $rateLimitText)
-                                .textFieldStyle(.plain)
-                                .font(.system(size: 13, design: .monospaced))
-                                .frame(width: 60).multilineTextAlignment(.trailing)
-                                .padding(.horizontal, 8).padding(.vertical, 5)
-                                .background(Color.primary.opacity(0.06))
-                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                .onAppear { rateLimitText = settings.rateLimitKbps == 0 ? "" : "\(settings.rateLimitKbps)" }
-                                .onChange(of: rateLimitText) { v in settings.rateLimitKbps = Int(v.filter(\.isNumber)) ?? 0 }
-                            Text("KB/s").font(.system(size: 12)).foregroundStyle(.secondary)
-                        }
-                    }
-                    SettingsDivider()
-                    SettingsRow("Retry attempts", icon: "arrow.triangle.2.circlepath") {
-                        Stepper("\(settings.retryCount)", value: $settings.retryCount, in: 0...10)
-                            .frame(width: 110)
-                    }
-                }
-
-                SettingsGroup(title: "Proxy") {
-                    SettingsRow("Use proxy", icon: "network.badge.shield.half.filled") {
-                        Toggle("", isOn: $settings.useProxy).labelsHidden()
-                    }
-                    if settings.useProxy {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Proxy URL").font(.system(size: 12)).foregroundStyle(.secondary)
-                            TextField("http://127.0.0.1:8080", text: $settings.proxyURL)
-                                .textFieldStyle(.plain)
-                                .font(.system(size: 12, design: .monospaced))
-                                .padding(.horizontal, 10).padding(.vertical, 8)
-                                .background(Color.primary.opacity(0.05))
-                                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
-                        }
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        Divider().padding(.leading, 16).opacity(0.5)
-                    }
-                }
-            }
-            .padding(20)
-        }
-    }
-}
-
-// MARK: - Performance Settings
-
-struct PerformanceSettings: View {
-    @EnvironmentObject var settings: SettingsManager
-
-    // Thread slider: 1–16 plus 0 = auto
-    private let threadOptions = [0, 1, 2, 4, 6, 8, 12, 16]
-
-    var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
-
-                SettingsGroup(title: "CPU Usage") {
-                    SettingsRow("Process priority", detail: "Controls which CPU cores macOS uses", icon: "cpu") {
-                        Picker("", selection: $settings.processPriorityRaw) {
-                            ForEach(ProcessQoS.allCases) { qos in
-                                Text(qos.label).tag(qos.rawValue)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 230)
-                    }
-
-                    SettingsDivider()
-
-                    SettingsRow("ffmpeg threads", detail: "Threads used during merge & SponsorBlock", icon: "slider.horizontal.3") {
-                        VStack(alignment: .trailing, spacing: 4) {
-                            HStack(spacing: 10) {
-                                Slider(
-                                    value: Binding(
-                                        get: { Double(settings.ffmpegThreads) },
-                                        set: { settings.ffmpegThreads = Int($0) }
-                                    ),
-                                    in: 0...16,
-                                    step: 1
-                                )
-                                .frame(width: 160)
-                                Text(settings.ffmpegThreads == 0 ? "Auto" : "\(settings.ffmpegThreads)")
-                                    .font(.system(size: 13, weight: .medium, design: .monospaced))
-                                    .frame(width: 36, alignment: .trailing)
-                            }
-                            Text(settings.ffmpegThreads == 0
-                                 ? "All cores - maximum speed, most heat"
-                                 : settings.ffmpegThreads <= 2 ? "Very cool, slightly slower"
-                                 : settings.ffmpegThreads <= 4 ? "Balanced - recommended for M-series"
-                                 : settings.ffmpegThreads <= 8 ? "Fast, moderate heat"
-                                 : "Very fast, high heat")
-                                .font(.system(size: 10)).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                SettingsGroup(title: "What these do") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        InfoRow(icon: "arrow.down.circle", color: .blue,
-                                title: "Downloading",
-                                description: "Network-bound - priority has minimal effect on speed or heat.")
-                        InfoRow(icon: "wand.and.stars", color: .purple,
-                                title: "Merging & SponsorBlock",
-                                description: "CPU-bound - this is where threads and priority matter. Fewer threads = cooler Mac.")
-                        InfoRow(icon: "thermometer.medium", color: .orange,
-                                title: "Recommended for M4",
-                                description: "Priority: Balanced. Threads: 4. Uses efficiency cores, keeps Mac cool, still fast.")
-                    }
-                    .padding(.horizontal, 16).padding(.vertical, 12)
-                }
-
-            }
-            .padding(20)
-        }
-    }
-}
-
-private struct InfoRow: View {
-    let icon: String; let color: Color
-    let title: String; let description: String
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 13))
-                .foregroundStyle(color)
-                .frame(width: 20)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 12, weight: .semibold))
-                Text(description).font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-        }
-    }
-}
-
-// MARK: - Advanced Settings
-
-struct AdvancedSettings: View {
-    @EnvironmentObject var settings:  SettingsManager
-    @EnvironmentObject var deps:      DependencyService
-    @EnvironmentObject var appUpdate: AppUpdateService
-    var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
-
-                SettingsGroup(title: "yt-dlp Extra Arguments") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Appended to every yt-dlp call. Use with care.")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
-                        TextField("e.g. --no-mtime --geo-bypass", text: $settings.ytdlpExtraArgs)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 12, design: .monospaced))
-                            .padding(.horizontal, 10).padding(.vertical, 8)
-                            .background(Color.primary.opacity(0.05))
-                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
-                    }
-                    .padding(14)
-                    Divider().opacity(0)
-                }
-
-                SettingsGroup(title: "Engine Updates (yt-dlp & ffmpeg)") {
-                    SettingsRow("Check on launch", icon: "arrow.triangle.2.circlepath") {
-                        Toggle("", isOn: $settings.checkUpdatesOnLaunch).labelsHidden()
-                    }
-                    SettingsDivider()
-                    SettingsRow("Check now", detail: "yt-dlp \(deps.ytdlp.statusLabel) · ffmpeg \(deps.ffmpeg.statusLabel)", icon: "magnifyingglass") {
-                        Button("Check") { Task { await deps.checkYtdlp(); await deps.checkFfmpeg() } }
-                            .buttonStyle(.plain).font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.accentColor)
-                            .padding(.horizontal, 10).frame(height: 26)
-                            .background(Color.accentColor.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    }
-                }
-
-                // App self-update section
-                SettingsGroup(title: "App Updates") {
-                    SettingsRow("Check for Yoink updates daily", icon: "app.badge") {
-                        Toggle("", isOn: $settings.checkUpdatesOnLaunch).labelsHidden()
-                    }
-                    SettingsDivider()
-                    SettingsRow("Current status",
-                                detail: appUpdate.statusLabel,
-                                icon: "info.circle") {
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(appUpdate.dotColor)
-                                .frame(width: 7, height: 7)
-                                .shadow(color: appUpdate.dotColor.opacity(0.5), radius: 3)
-                            Button(appUpdate.status == .checking ? "Checking…" : "Check Now") {
-                                appUpdate.checkForUpdates()
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.accentColor)
-                            .padding(.horizontal, 10).frame(height: 26)
-                            .background(Color.accentColor.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                            .disabled(appUpdate.status == .checking)
-                        }
-                    }
-                    if case .available(_, let latest, _) = appUpdate.status {
-                        SettingsDivider()
-                        HStack(spacing: 10) {
-                            Image(systemName: "arrow.down.circle.fill")
-                                .font(.system(size: 13)).foregroundStyle(.orange).frame(width: 18)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Yoink \(latest) is available")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(.orange)
-                                Text("Click to download the latest release")
-                                    .font(.system(size: 11)).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button("Download") { appUpdate.openDownloadPage() }
-                                .buttonStyle(.plain)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 12).frame(height: 28)
-                                .background(Color.orange)
-                                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        }
-                        .padding(.horizontal, 16).padding(.vertical, 11)
-                    }
-                }
-
-                SettingsGroup(title: "Danger Zone") {
-                    SettingsRow("Reset all settings", detail: "Restores defaults, doesn't delete files",
-                                icon: "arrow.counterclockwise") {
-                        Button("Reset") {
-                            if let domain = Bundle.main.bundleIdentifier {
-                                UserDefaults.standard.removePersistentDomain(forName: domain)
-                            }
-                        }
-                        .buttonStyle(.plain).font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.red)
-                        .padding(.horizontal, 10).frame(height: 26)
-                        .background(Color.red.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    }
-                }
-            }
-            .padding(20)
-        }
-    }
-}
-
-// MARK: - About
-
-struct AboutSettings: View {
-    @EnvironmentObject var deps:      DependencyService
-    @EnvironmentObject var appUpdate: AppUpdateService
-    @State private var showTutorial = false
-
-    var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
-            // App icon + name
-            VStack(spacing: 10) {
-                ZStack {
-                    Circle()
-                        .fill(Color.accentColor.opacity(0.12))
-                        .frame(width: 72, height: 72)
-                    Image(systemName: "arrow.down.circle.fill")
-                        .font(.system(size: 46)).foregroundStyle(Color.accentColor)
-                        .symbolRenderingMode(.hierarchical)
-                }
-                Text("Yoink")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")  ·  Built with SwiftUI")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-            }
-
-            // App update status pill
-            Button {
-                if case .available = appUpdate.status { appUpdate.openDownloadPage() }
-                else { appUpdate.checkForUpdates() }
-            } label: {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(appUpdate.dotColor)
-                        .frame(width: 7, height: 7)
-                        .shadow(color: appUpdate.dotColor.opacity(0.5), radius: 3)
-                    Text(appUpdate.statusLabel)
-                        .font(.system(size: 12, weight: .medium))
-                    if case .available = appUpdate.status {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.orange)
-                    }
-                }
-                .foregroundStyle(appUpdate.status == AppUpdateStatus.unknown ? Color.secondary :
-                                 (appUpdate.dotColor == .orange ? .orange : Color.primary))
-                .padding(.horizontal, 14).padding(.vertical, 7)
-                .background(Color.primary.opacity(0.06))
-                .clipShape(Capsule())
-                .overlay(Capsule().strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5))
-            }
-            .buttonStyle(.plain)
-
-
-            // Dep chips
-            VStack(spacing: 10) {
-                DepStatusChip(label: "yt-dlp",  status: deps.ytdlp)
-                DepStatusChip(label: "ffmpeg",  status: deps.ffmpeg)
-            }
-            .frame(maxWidth: 280)
-
-            HStack(spacing: 14) {
-                Link("yt-dlp on GitHub", destination: URL(string: "https://github.com/yt-dlp/yt-dlp")!)
-                Link("Source", destination: URL(string: "https://github.com/0x1p0/yoink")!)
-            }
-            .font(.system(size: 13)).foregroundStyle(Color.accentColor)
-
-            // Tutorial button
-            Button {
-                showTutorial = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "graduationcap.fill")
-                        .font(.system(size: 12))
-                    Text("Show Tutorial")
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 14).padding(.vertical, 7)
-                .background(Color.primary.opacity(0.06))
-                .clipShape(Capsule())
-                .overlay(Capsule().strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5))
-            }
-            .buttonStyle(.plain)
-
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-        .sheet(isPresented: $showTutorial) {
-            TutorialView { showTutorial = false }
-        }
-    }
-}
-
-struct DepStatusChip: View {
-    let label: String; let status: DepStatus
-    var body: some View {
-        HStack(spacing: 10) {
-            Circle().fill(status.dotColor).frame(width: 8)
-                .shadow(color: status.dotColor.opacity(0.5), radius: 3)
-            Text(label).font(.system(size: 13, weight: .medium, design: .monospaced))
-            Spacer()
-            Text(status.statusLabel).font(.system(size: 12)).foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(Color(.controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
-            .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
-    }
-}
-
-// MARK: - Onboarding helpers (used in ContentView)
-
-struct StatusRow: View {
-    let icon: String; let color: Color; let text: String; let detail: String
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon).foregroundStyle(color).font(.system(size: 14))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(text).font(.system(size: 13, weight: .medium))
-                Text(detail).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.secondary)
-            }
-        }
-    }
-}
-
-struct StepRow: View {
-    let number: String; let title: String; let detail: String
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(number)
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(.white).frame(width: 22, height: 22)
-                .background(Color.accentColor).clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13, weight: .semibold))
-                Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
-            }
-        }
-    }
-}
-
-struct ToolRow: View {
-    let name: String; let status: DepStatus
-    let installing: Bool; let onInstall: () -> Void
-    var body: some View {
-        HStack(spacing: 12) {
-            Circle().fill(status.dotColor).frame(width: 8, height: 8)
-                .shadow(color: status.dotColor.opacity(0.5), radius: 3)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(.system(size: 13, weight: .medium, design: .monospaced))
-                Text(status.statusLabel).font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-            Spacer()
-            if installing {
-                ProgressView().scaleEffect(0.7)
-            } else if case .failed = status {
-                Button("Retry") { onInstall() }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .font(.system(size: 12))
-            } else if case .missing = status {
-                Button("Re-check") { onInstall() }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .font(.system(size: 12))
-            } else if status.isReady {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green).font(.system(size: 16))
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(Color.primary.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
-            .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
-    }
-}
-
-// MARK: - Custom Text Menu Bar Row
-
-struct CustomTextMenuBarRow: View {
-    @EnvironmentObject var settings: SettingsManager
-    @State private var customText = ""
-    private var isActive: Bool { settings.menuBarIconId.hasPrefix("text_") }
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Text("Custom text:")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
-            TextField("YK", text: $customText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .frame(width: 48).multilineTextAlignment(.center)
-                .padding(.horizontal, 6).padding(.vertical, 5)
-                .background(isActive ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(isActive ? Color.accentColor.opacity(0.5) : Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
-                .onChange(of: customText) { v in
-                    if v.count > 4 { customText = String(v.prefix(4)) }
-                }
-            Text("max 4 chars")
-                .font(.system(size: 10)).foregroundStyle(.tertiary)
-            if !customText.isEmpty {
-                Button("Use this") {
-                    settings.menuBarIconId = "text_\(customText)"
-                    Haptics.tap()
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.accentColor)
-                .padding(.horizontal, 10).frame(height: 28)
-                .background(Color.accentColor.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            }
-        }
-        .onAppear {
-            if settings.menuBarIconId.hasPrefix("text_") {
-                customText = String(settings.menuBarIconId.dropFirst(5))
-            }
-        }
-    }
-}
-
-// MARK: - Emoji Progress Set Editor
-
-struct EmojiProgressSetEditor: View {
-    @EnvironmentObject var settings: SettingsManager
-    var onActivate: (() -> Void)? = nil
-
-    @State private var slots: [String] = []
-    // "Enter your 10" bulk input mode
-    @State private var bulkInput = ""
-    @State private var showBulkInput = false
-
-    private let labels = ["Idle","10%","20%","30%","40%","50%","60%","70%","80%","90%","100%"]
-    private let presets: [(String, [String])] = [
-        ("Numbers",   ["0️⃣","1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]),
-        ("Fire",      ["🌑","🔥","🔥","🔥","🔥","🔥","🔥","🔥","🔥","🔥","💥"]),
-        ("Battery",   ["🪫","🔋","🔋","🔋","🔋","🔋","🔋","🔋","🔋","🔋","✅"]),
-        ("Rocket",    ["🚀","🌍","🌕","☄️","🛸","⭐","💫","🌟","🌠","🎇","🎆"]),
-        ("Food",      ["🍕","🍕","🍔","🌮","🌯","🥙","🥪","🍜","🍝","🍱","🎉"]),
-        ("Music",     ["🎵","🎶","🎸","🥁","🎺","🎷","🎹","🎻","🎤","🎧","🎊"]),
-    ]
-
-    // Extract grapheme clusters (emoji-safe) from a string
-    private func graphemes(_ s: String) -> [String] {
-        s.unicodeScalars.reduce(into: [String]()) { arr, scalar in
-            let ch = String(scalar)
-            // Variation selector / zero-width joiner → append to previous
-            if scalar.value == 0xFE0F || scalar.value == 0x200D,
-               !arr.isEmpty {
-                arr[arr.count - 1] += ch
-            } else {
-                arr.append(ch)
-            }
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Header row
-            HStack {
-                Text("Progress emoji sequence")
-                    .font(.system(size: 12, weight: .semibold))
-                Spacer()
-                Button("Reset") {
-                    slots = ["0️⃣","1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
-                    save(); onActivate?(); Haptics.tap()
-                }
-                .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-
-            Text("Shown in the menu bar: idle state + 10%→100% steps (11 total)")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-
-            // Preset chips - fixed width so they align in a clean row
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(presets, id: \.0) { name, emojis in
-                        Button {
-                            slots = emojis; save(); onActivate?(); Haptics.tap()
-                        } label: {
-                            HStack(spacing: 3) {
-                                Text(emojis[0]).font(.system(size: 12))
-                                Text("→").font(.system(size: 9)).foregroundStyle(.secondary)
-                                Text(emojis[10]).font(.system(size: 12))
-                                Text(name).font(.system(size: 11, weight: .medium))
-                            }
-                            .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(Color.primary.opacity(0.07))
-                            .clipShape(RoundedRectangle(cornerRadius: 7))
-                            .overlay(RoundedRectangle(cornerRadius: 7)
-                                .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-
-            // 11 individual slot cells - uniform fixed columns
-            HStack(spacing: 4) {
-                ForEach(0..<11, id: \.self) { i in
-                    EmojiSlotCell(emoji: Binding(
-                        get: { i < slots.count ? slots[i] : "❓" },
-                        set: { v in
-                            while slots.count <= i { slots.append("❓") }
-                            slots[i] = v; save(); onActivate?()
-                        }
-                    ), label: labels[i])
-                }
-            }
-
-            // "Enter your own 11 emojis" bulk input button + popover
-            HStack(spacing: 8) {
-                Button {
-                    bulkInput = slots.joined()
-                    showBulkInput = true
-                    onActivate?()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "keyboard").font(.system(size: 11))
-                        Text("Enter your own 11 emojis…")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Color.accentColor.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
-                    .overlay(RoundedRectangle(cornerRadius: 7)
-                        .strokeBorder(Color.accentColor.opacity(0.25), lineWidth: 0.5))
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: $showBulkInput, arrowEdge: .bottom) {
-                    BulkEmojiInputPopover(input: $bulkInput, onApply: { str in
-                        let parsed = parseEmojis(str)
-                        guard parsed.count == 11 else { return }
-                        slots = parsed; save(); onActivate?()
-                        showBulkInput = false
-                        Haptics.success()
-                    })
-                }
-
-                if showBulkInput == false && !slots.isEmpty {
-                    Text("Paste or type 11 emojis side-by-side")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
-                        .onAppear { _ = parseEmojis(bulkInput) }
-                }
-            }
-        }
-        .onAppear { slots = settings.progressEmojiSet }
-    }
-
-    func save() {
-        guard slots.count == 11 else { return }
-        settings.progressEmojiSetRaw = slots.joined(separator: ",")
-    }
-
-    func parseEmojis(_ input: String) -> [String] {
-        var result: [String] = []
-        var current = ""
-        for scalar in input.unicodeScalars {
-            if scalar.value == 0xFE0F || scalar.value == 0x200D || scalar.value == 0x20E3 {
-                current += String(scalar)
-            } else {
-                if !current.isEmpty { result.append(current) }
-                current = String(scalar)
-            }
-        }
-        if !current.isEmpty { result.append(current) }
-        return result.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-    }
-}
-
-// MARK: - Bulk Emoji Input Popover
-
-struct BulkEmojiInputPopover: View {
-    @Binding var input: String
-    let onApply: (String) -> Void
-    @State private var parsed: [String] = []
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Enter 11 emojis")
-                .font(.system(size: 13, weight: .semibold))
-            Text("Type or paste 11 emojis in a row - one for idle + 10 for 10%→100%")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-
-            TextField("e.g. 🌑🔥🔥🔥🔥🔥🔥🔥🔥🔥💥", text: $input)
-                .textFieldStyle(.plain)
-                .font(.system(size: 22))
-                .padding(.horizontal, 10).padding(.vertical, 8)
-                .background(Color.primary.opacity(0.05))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color(.separatorColor).opacity(0.5), lineWidth: 0.5))
-                .onChange(of: input) { v in
-                    parsed = parseEmojis(v)
-                }
-
-            // Live preview of parsed emojis
-            if !parsed.isEmpty {
-                HStack(spacing: 3) {
-                    ForEach(Array(parsed.prefix(11).enumerated()), id: \.offset) { _, e in
-                        Text(e).font(.system(size: 18))
-                            .frame(width: 28, height: 28)
-                            .background(Color.primary.opacity(0.06))
-                            .clipShape(RoundedRectangle(cornerRadius: 5))
-                    }
-                    Spacer()
-                    Text("\(min(parsed.count, 11))/11")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(parsed.count >= 11 ? .green : .secondary)
-                }
-            }
-
-            HStack {
-                Spacer()
-                Button("Cancel") { input = ""; }
-                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(.secondary)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                Button("Apply") { onApply(input) }
-                    .buttonStyle(.plain).font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12).padding(.vertical, 5)
-                    .background(parsed.count >= 11 ? Color.accentColor : Color.secondary.opacity(0.4))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
-                    .disabled(parsed.count < 11)
-            }
-        }
-        .padding(14)
-        .frame(width: 360)
-        .onAppear { parsed = parseEmojis(input) }
-    }
-
-    func parseEmojis(_ input: String) -> [String] {
-        var result: [String] = []
-        var current = ""
-        for scalar in input.unicodeScalars {
-            if scalar.value == 0xFE0F || scalar.value == 0x200D || scalar.value == 0x20E3 {
-                current += String(scalar)
-            } else {
-                if !current.isEmpty { result.append(current) }
-                current = String(scalar)
-            }
-        }
-        if !current.isEmpty { result.append(current) }
-        return result.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-    }
-}
-
-// MARK: - Single emoji slot cell
-
-struct EmojiSlotCell: View {
-    @Binding var emoji: String
-    let label: String
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        VStack(spacing: 3) {
-            TextField("", text: $emoji)
-                .textFieldStyle(.plain)
-                .font(.system(size: 15))
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .frame(height: 32)
-                .background(focused ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.05))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(focused ? Color.accentColor.opacity(0.4) : Color(.separatorColor).opacity(0.4), lineWidth: 0.5))
-                .focused($focused)
-                .onChange(of: emoji) { v in
-                    guard !v.isEmpty else { return }
-                    // Keep only first grapheme cluster
-                    var idx = v.startIndex
-                    v.formIndex(after: &idx)
-                    let first = String(v[v.startIndex..<idx])
-                    if emoji != first { emoji = first }
-                }
-            Text(label)
-                .font(.system(size: 8, weight: .medium))
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - Presets Settings
+// MARK: - Clipboard & Automation
 
 struct AutomationSettings: View {
     @EnvironmentObject var settings: SettingsManager
+    @ObservedObject private var clipboard = ClipboardMonitor.shared
     @StateObject private var scheduled = ScheduledDownloadStore.shared
     @State private var newDomain = ""
     @State private var confirmResetDomains = false
 
-    var domains: [String] { settings.clipboardDomains }
+    private var domains: [String] { settings.clipboardDomains }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
-
-                // Clipboard monitor toggle
-                SettingsGroup(title: "Clipboard Monitor") {
-                    SettingsRow("Watch clipboard for video links",
-                                detail: "Yoink fires a system notification whenever you copy a supported URL anywhere on your Mac - in Safari, Brave, Chrome, anywhere. Hover the notification to see Download Now / Watch Later buttons.",
-                                icon: "doc.on.clipboard") {
-                        Toggle("", isOn: $settings.clipboardMonitor).labelsHidden()
+        Form {
+            Section {
+                Toggle(isOn: Binding(
+                    get: { settings.clipboardMonitor },
+                    set: { on in
+                        settings.clipboardMonitor = on
+                        if on { clipboard.start() } else { clipboard.stop() }
                     }
-                    if ClipboardMonitor.shared.isSnoozed, let label = ClipboardMonitor.shared.snoozeLabel {
-                        SettingsDivider()
-                        SettingsRow("Snoozed", detail: "Clipboard monitoring is temporarily paused", icon: "bell.slash") {
-                            HStack(spacing: 8) {
-                                Text(label)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(.orange)
-                                Button("Cancel snooze") { ClipboardMonitor.shared.clearSnooze() }
-                                    .buttonStyle(.plain)
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(.orange)
-                            }
-                        }
-                    }
-                    SettingsDivider()
-                    SettingsRow("\"Download Now\" - Remove sponsors",
-                                detail: "When you tap Download Now on a clipboard notification, automatically remove sponsor segments using SponsorBlock.",
-                                icon: "shield.fill") {
-                        Toggle("", isOn: $settings.notifSponsorBlock).labelsHidden()
-                    }
-                    SettingsDivider()
-                    SettingsRow("\"Download Now\" - Download subtitles",
-                                detail: "When you tap Download Now on a clipboard notification, automatically download subtitles if available.",
-                                icon: "captions.bubble.fill") {
-                        Toggle("", isOn: $settings.notifSubtitles).labelsHidden()
+                )) {
+                    RowLabel(title: "Offer links I copy",
+                             detail: "Copy a video link anywhere on your Mac and Yoink offers to download it.")
+                }
+                if let label = clipboard.snoozeLabel {
+                    LabeledContent {
+                        Button("Resume Now") { clipboard.clearSnooze() }
+                    } label: {
+                        Label(label, systemImage: "bell.slash.fill")
+                            .foregroundStyle(.orange)
                     }
                 }
+            } header: {
+                Text("Clipboard")
+            }
 
-                // Domain list
-                SettingsGroup(title: "Detected Domains") {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Yoink watches for links from these domains. Add any site yt-dlp supports.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 10)
+            Section("When I Choose \"Download Now\" from a Notification") {
+                Toggle("Skip sponsor segments", isOn: $settings.notifSponsorBlock)
+                Toggle("Download subtitles", isOn: $settings.notifSubtitles)
+            }
 
-                        ForEach(domains, id: \.self) { domain in
-                            HStack(spacing: 10) {
-                                Circle()
-                                    .fill(Color.accentColor.opacity(0.2))
-                                    .frame(width: 6, height: 6)
-                                Text(domain)
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .foregroundStyle(.primary.opacity(0.85))
-                                Spacer()
-                                // Only allow removing if not the last one
-                                if domains.count > 1 {
-                                    Button {
-                                        var d = settings.clipboardDomains
-                                        d.removeAll { $0 == domain }
-                                        settings.clipboardDomains = d
-                                    } label: {
-                                        Image(systemName: "minus.circle")
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.red.opacity(0.5))
-                                    }
-                                    .buttonStyle(.plain)
+            Section("Watch Later Downloads") {
+                Toggle("Skip sponsor segments", isOn: $settings.watchLaterSponsorBlock)
+                Toggle("Download subtitles", isOn: $settings.watchLaterSubtitles)
+            }
+
+            Section {
+                FlowLayout(spacing: 6) {
+                    ForEach(domains, id: \.self) { domain in
+                        HStack(spacing: 5) {
+                            Text(domain)
+                                .font(.system(size: 12, design: .monospaced))
+                            if domains.count > 1 {
+                                Button {
+                                    var d = settings.clipboardDomains
+                                    d.removeAll { $0 == domain }
+                                    settings.clipboardDomains = d
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundStyle(.secondary)
                                 }
-                            }
-                            .padding(.horizontal, 14).padding(.vertical, 7)
-                            SettingsDivider()
-                        }
-
-                        // Add new domain row
-                        HStack(spacing: 8) {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 12)).foregroundStyle(Color.accentColor.opacity(0.7))
-                            TextField("Add domain  e.g. peertube.social", text: $newDomain)
-                                .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
-                                .onSubmit { addDomain() }
-                            if !newDomain.isEmpty {
-                                Button("Add") { addDomain() }
-                                    .buttonStyle(.plain)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(Color.accentColor)
+                                .buttonStyle(.plain)
+                                .help("Stop watching \(domain)")
                             }
                         }
-                        .padding(.horizontal, 14).padding(.vertical, 10)
-
-                        SettingsDivider()
-
-                        // Reset to defaults
-                        Button {
-                            confirmResetDomains = true
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "arrow.counterclockwise").font(.system(size: 10))
-                                Text("Reset to defaults").font(.system(size: 11))
-                            }
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 14).padding(.vertical, 9)
-                        }
-                        .buttonStyle(.plain)
-                        .confirmationDialog("Reset domain list to defaults?", isPresented: $confirmResetDomains) {
-                            Button("Reset", role: .destructive) {
-                                settings.clipboardDomainsRaw = ""  // empty = use defaults
-                            }
-                            Button("Cancel", role: .cancel) {}
-                        }
-                    }
-                    Divider().opacity(0)
-                }
-
-                // Auto-organize
-                SettingsGroup(title: "Auto-Organize") {
-                    SettingsRow("Sort downloads into site folders",
-                                detail: "Moves files into subfolders like YouTube/, Twitch/ inside your download folder",
-                                icon: "folder.badge.gearshape") {
-                        Toggle("", isOn: $settings.autoOrganizeBySite).labelsHidden()
+                        .padding(.leading, 9).padding(.trailing, domains.count > 1 ? 7 : 9)
+                        .frame(height: 24)
+                        .background(Capsule().fill(Color.primary.opacity(0.07)))
                     }
                 }
-
-                // Shortcuts
-                SettingsGroup(title: "Apple Shortcuts") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Run an Apple Shortcut after every download completes. The file path is passed as input.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                        HStack(spacing: 8) {
-                            Image(systemName: "bolt.fill").font(.system(size: 11)).foregroundStyle(.purple)
-                            TextField("Shortcut name (leave blank to disable)", text: $settings.shortcutOnComplete)
-                                .textFieldStyle(.plain).font(.system(size: 13))
-                        }
-                        .padding(.horizontal, 10).padding(.vertical, 8)
-                        .background(Color.primary.opacity(0.05))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(Color(.separatorColor).opacity(0.4), lineWidth: 0.5))
-                        Button {
-                            NSWorkspace.shared.open(URL(string: "shortcuts://")!)
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "arrow.up.right.square").font(.system(size: 10))
-                                Text("Open Shortcuts app").font(.system(size: 11))
-                            }.foregroundStyle(Color.accentColor)
-                        }.buttonStyle(.plain)
-                    }
-                    .padding(14)
-                    Divider().opacity(0)
+                .padding(.vertical, 2)
+                HStack(spacing: 8) {
+                    TextField("", text: $newDomain, prompt: Text("Add a site, e.g. peertube.social"))
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.leading)
+                        .labelsHidden()
+                        .onSubmit(addDomain)
+                    Button("Add", action: addDomain)
+                        .disabled(newDomain.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
+            } header: {
+                HStack {
+                    Text("Sites to Watch")
+                    Spacer()
+                    Button("Reset to Defaults") { confirmResetDomains = true }
+                        .buttonStyle(.link)
+                        .font(.callout)
+                }
+            }
+            .confirmationDialog("Reset the list of watched sites?", isPresented: $confirmResetDomains) {
+                Button("Reset", role: .destructive) { settings.clipboardDomainsRaw = "" }
+                Button("Cancel", role: .cancel) {}
+            }
 
-                // Scheduled downloads
-                if !scheduled.items.isEmpty {
-                    SettingsGroup(title: "Schedule") {
-                        VStack(spacing: 0) {
-                            ForEach(scheduled.items) { item in
-                                ScheduledItemRow(item: item)
-                                SettingsDivider()
-                            }
-                        }
-                        Divider().opacity(0)
+            Section {
+                LabeledContent {
+                    Button("Open Shortcuts") { NSWorkspace.shared.open(URL(string: "shortcuts://")!) }
+                } label: {
+                    RowLabel(title: "Run a Shortcut after each download",
+                             detail: "The finished file is passed to the Shortcut as input.")
+                }
+                TextField(text: $settings.shortcutOnComplete, prompt: Text("Shortcut name — leave empty to turn off")) {
+                    Text("Shortcut")
+                }
+            } header: {
+                Text("Apple Shortcuts")
+            }
+
+            if !scheduled.items.isEmpty {
+                Section("Scheduled Downloads") {
+                    ForEach(scheduled.items) { item in
+                        ScheduledItemRow(item: item)
                     }
                 }
             }
-            .padding(20)
         }
+        .formStyle(.grouped)
     }
 
     private func addDomain() {
@@ -1942,6 +976,7 @@ struct AutomationSettings: View {
             .replacingOccurrences(of: "https://", with: "")
             .replacingOccurrences(of: "http://", with: "")
             .replacingOccurrences(of: "www.", with: "")
+            .components(separatedBy: "/").first ?? ""
         guard !trimmed.isEmpty, !domains.contains(trimmed) else { newDomain = ""; return }
         var d = settings.clipboardDomains
         d.append(trimmed)
@@ -1949,8 +984,6 @@ struct AutomationSettings: View {
         newDomain = ""
     }
 }
-
-// MARK: - Scheduled Item Row (live countdown)
 
 struct ScheduledItemRow: View {
     let item: ScheduledDownload
@@ -1962,35 +995,280 @@ struct ScheduledItemRow: View {
         let s = secondsUntil
         guard s > 0 else { return item.fired ? "Started" : "Starting…" }
         let h = s / 3600; let m = (s % 3600) / 60; let sec = s % 60
-        if h > 0 { return "In \(h)h \(m)m \(sec)s" }
-        if m > 0 { return "In \(m)m \(sec)s" }
-        return "In \(sec)s"
+        if h > 0 { return "in \(h)h \(m)m" }
+        if m > 0 { return "in \(m)m \(sec)s" }
+        return "in \(sec)s"
     }
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: item.fired ? "checkmark.circle.fill" : "clock.fill")
-                .font(.system(size: 12))
                 .foregroundStyle(item.fired ? .green : Color.accentColor)
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.displayTitle)
-                    .font(.system(size: 12, weight: .medium)).lineLimit(1)
-                HStack(spacing: 6) {
-                    Text(item.scheduledAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
-                    if !item.fired {
-                        Text("·").foregroundStyle(.tertiary)
-                        Text(countdownText)
-                            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(secondsUntil < 60 ? Color.orange : Color.accentColor)
-                    }
-                }
+                Text(item.displayTitle).lineLimit(1)
+                Text(item.scheduledAt.formatted(date: .abbreviated, time: .shortened) + (item.fired ? "" : " · " + countdownText))
+                    .font(.callout)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             Button { ScheduledDownloadStore.shared.remove(item) } label: {
-                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary.opacity(0.5))
-            }.buttonStyle(.plain)
+                Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Cancel this scheduled download")
         }
-        .padding(.horizontal, 14).padding(.vertical, 8)
+    }
+}
+
+// MARK: - Network
+
+struct NetworkSettings: View {
+    @EnvironmentObject var settings: SettingsManager
+
+    var body: some View {
+        Form {
+            Section("Speed") {
+                LabeledContent {
+                    HStack(spacing: 6) {
+                        TextField("", value: $settings.rateLimitKbps, format: .number, prompt: Text("Unlimited"))
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 100)
+                        Text("KB/s").foregroundStyle(.secondary)
+                    }
+                } label: {
+                    RowLabel(title: "Limit download speed",
+                             detail: settings.rateLimitKbps > 0
+                                ? "About \(String(format: "%.1f", Double(settings.rateLimitKbps) / 1024)) MB/s per download."
+                                : "0 means no limit.")
+                }
+                Stepper(value: $settings.retryCount, in: 0...10) {
+                    RowLabel(title: "Retry failed connections",
+                             detail: settings.retryCount == 0 ? "Don't retry." : "Up to \(settings.retryCount) \(settings.retryCount == 1 ? "time" : "times").")
+                }
+            }
+
+            Section {
+                Toggle("Use a proxy", isOn: $settings.useProxy)
+                if settings.useProxy {
+                    TextField(text: $settings.proxyURL, prompt: Text("http://127.0.0.1:8080 or socks5://…")) {
+                        Text("Proxy address")
+                    }
+                    .font(.system(.body, design: .monospaced))
+                }
+            } header: {
+                Text("Proxy")
+            } footer: {
+                Text("Routes every download through this proxy. Supports http, https and socks5.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+// MARK: - Performance
+
+struct PerformanceSettings: View {
+    @EnvironmentObject var settings: SettingsManager
+
+    var body: some View {
+        Form {
+            Section {
+                Picker(selection: $settings.processPriorityRaw) {
+                    ForEach(ProcessQoS.allCases) { qos in Text(qos.label).tag(qos.rawValue) }
+                } label: {
+                    RowLabel(title: "Priority", detail: "Lower priority keeps your Mac cool and quiet.")
+                }
+                LabeledContent {
+                    HStack(spacing: 10) {
+                        Slider(value: Binding(
+                            get: { Double(settings.ffmpegThreads) },
+                            set: { settings.ffmpegThreads = Int($0) }
+                        ), in: 0...16, step: 1)
+                        .frame(width: 170)
+                        Text(settings.ffmpegThreads == 0 ? "Auto" : "\(settings.ffmpegThreads)")
+                            .monospacedDigit()
+                            .frame(width: 36, alignment: .trailing)
+                    }
+                } label: {
+                    RowLabel(title: "Processing threads", detail: threadHint)
+                }
+            } header: {
+                Text("CPU")
+            } footer: {
+                Text("Downloading is limited by your connection. Priority and threads matter when Yoink merges video and audio, cuts clips or removes sponsors.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var threadHint: String {
+        switch settings.ffmpegThreads {
+        case 0:     return "All cores — fastest, warmest."
+        case 1...2: return "Very cool, a little slower."
+        case 3...4: return "Balanced — recommended."
+        case 5...8: return "Fast, a bit warmer."
+        default:    return "Fastest, runs warm."
+        }
+    }
+}
+
+// MARK: - Advanced
+
+struct AdvancedSettings: View {
+    @EnvironmentObject var settings:  SettingsManager
+    @EnvironmentObject var deps:      DependencyService
+    @State private var confirmReset = false
+    @State private var showYtdlp = false
+    @State private var showFfmpeg = false
+
+    var body: some View {
+        Form {
+            Section("Download Engines") {
+                engineRow(name: "yt-dlp", detail: "Finds and downloads videos from 1000+ sites",
+                          status: deps.ytdlp, update: { deps.forceUpdateYtdlp() }, details: { showYtdlp = true })
+                engineRow(name: "ffmpeg", detail: "Merges, cuts and converts media",
+                          status: deps.ffmpeg, update: { deps.forceUpdateFfmpeg() }, details: { showFfmpeg = true })
+            }
+
+            Section {
+                TextField(text: $settings.ytdlpExtraArgs, prompt: Text("e.g. --no-mtime --geo-bypass")) {
+                    Text("Extra arguments")
+                }
+                .font(.system(.body, design: .monospaced))
+            } header: {
+                Text("yt-dlp")
+            } footer: {
+                Text("Added to every download. For options Yoink doesn't have a setting for — use with care.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                LabeledContent {
+                    Button("Reset…", role: .destructive) { confirmReset = true }
+                } label: {
+                    RowLabel(title: "Reset all settings",
+                             detail: "Restores every preference to its default. Your downloaded files, history and Watch Later list aren't touched.")
+                }
+            }
+            .confirmationDialog("Reset all settings to their defaults?", isPresented: $confirmReset, titleVisibility: .visible) {
+                Button("Reset Settings", role: .destructive) { resetSettings() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Downloaded files, history and Watch Later stay as they are.")
+            }
+        }
+        .formStyle(.grouped)
+        .sheet(isPresented: $showYtdlp) { DepSheet(tool: "yt-dlp").environmentObject(deps) }
+        .sheet(isPresented: $showFfmpeg) { DepSheet(tool: "ffmpeg").environmentObject(deps) }
+    }
+
+    private func engineRow(name: String, detail: String, status: DepStatus,
+                           update: @escaping () -> Void, details: @escaping () -> Void) -> some View {
+        LabeledContent {
+            HStack(spacing: 8) {
+                if case .updating = status {
+                    ProgressView().controlSize(.small)
+                    Text("Updating…").foregroundStyle(.secondary)
+                } else {
+                    Button("Update") { update() }
+                        .disabled(!status.isReady)
+                }
+                Button("Details…", action: details)
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Circle().fill(status.dotColor).frame(width: 7, height: 7)
+                RowLabel(title: "\(name)  \(status.version ?? "")", detail: status.isReady ? detail : status.statusLabel)
+            }
+        }
+    }
+
+    /// Clears preferences but keeps user data (history, Watch Later, schedule, folder).
+    private func resetSettings() {
+        let keep: Set<String> = [
+            "downloadHistory_v1", "watchLater_v1", "scheduledDownloads_v1",
+            "outputDirectoryBookmark_v2", "outputDirectoryPath_v1",
+            "pendingDownloadURLs_v1", "hasSeenTutorial",
+        ]
+        let defaults = UserDefaults.standard
+        guard let domain = Bundle.main.bundleIdentifier,
+              let all = defaults.persistentDomain(forName: domain) else { return }
+        for key in all.keys where !keep.contains(key) {
+            defaults.removeObject(forKey: key)
+        }
+        SettingsManager.shared.objectWillChange.send()
+        Haptics.success()
+    }
+}
+
+// MARK: - About
+
+struct AboutSettings: View {
+    @EnvironmentObject var deps:      DependencyService
+    @EnvironmentObject var appUpdate: AppUpdateService
+    @State private var showTutorial = false
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(spacing: 10) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .frame(width: 88, height: 88)
+                    Text("Yoink")
+                        .font(.system(size: 24, weight: .bold, design: .serif))
+                    Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
+                        .foregroundStyle(.secondary)
+                    Text("Download video and audio from 1000+ sites — right from your Mac.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    HStack(spacing: 10) {
+                        if case .available = appUpdate.status {
+                            Button("Download Update") { appUpdate.openDownloadPage() }
+                                .buttonStyle(.borderedProminent)
+                        } else {
+                            Button(appUpdate.status == .checking ? "Checking…" : "Check for Updates") {
+                                appUpdate.checkForUpdates()
+                            }
+                            .disabled(appUpdate.status == .checking)
+                        }
+                        Button("Show Tutorial") { showTutorial = true }
+                    }
+                    .padding(.top, 4)
+                    Text(appUpdate.statusLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+
+            Section("Powered By") {
+                LabeledContent("yt-dlp", value: deps.ytdlp.statusLabel)
+                LabeledContent("ffmpeg", value: deps.ffmpeg.statusLabel)
+                LabeledContent("SponsorBlock", value: "sponsor.ajay.app")
+            }
+
+            Section {
+                Link(destination: URL(string: "https://github.com/0x1p0/yoink")!) {
+                    Label("Yoink on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+                Link(destination: URL(string: "https://github.com/0x1p0/yoink/issues")!) {
+                    Label("Report a Problem", systemImage: "exclamationmark.bubble")
+                }
+                Link(destination: URL(string: "https://github.com/yt-dlp/yt-dlp")!) {
+                    Label("yt-dlp on GitHub", systemImage: "arrow.down.circle")
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .sheet(isPresented: $showTutorial) {
+            TutorialView { showTutorial = false }
+        }
     }
 }

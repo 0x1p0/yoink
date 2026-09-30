@@ -11,4 +11,5 @@ DerivedData/
 Yoink/Resources/bin/ffmpeg
 Yoink/Resources/bin/ffprobe
 Yoink/Resources/bin/yt-dlp
+Yoink/Resources/bin/yt-dlp_macos/
 Yoink/Resources/bin/python/

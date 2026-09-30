@@ -57,8 +57,10 @@ jobs:
           STAGING="$(mktemp -d)"
           cp -R "$APP" "$STAGING/"
           ln -s /Applications "$STAGING/Applications"
+          # ULMO (LZMA) packs the bundled ffmpeg/ffprobe/yt-dlp far tighter than UDZO (zlib):
+          # ~20% smaller download. Opens on macOS 10.15+, well below our macOS 13 minimum.
           hdiutil create -volname "Yoink $VERSION" -srcfolder "$STAGING" \
-            -ov -format UDZO "Yoink-$VERSION.dmg"
+            -ov -format ULMO "Yoink-$VERSION.dmg"
           ls -lh "Yoink-$VERSION.dmg"
 
       - name: Publish GitHub release
