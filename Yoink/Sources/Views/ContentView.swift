@@ -507,6 +507,8 @@ struct ModeToggle: View {
                 .font(.system(size: 11, weight: .semibold))
             Text(mode.shortLabel)
                 .font(.system(size: 12, weight: lit ? .semibold : .medium))
+                .lineLimit(1)
+                .fixedSize()   // never truncate a tab name (e.g. when a count badge appears)
             if n > 0 {
                 Text("\(n)")
                     .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -515,6 +517,7 @@ struct ModeToggle: View {
                     .padding(.horizontal, 5)
                     .frame(minWidth: 17, minHeight: 16)
                     .background(Capsule().fill(lit ? Color.accentColor : Color.primary.opacity(0.1)))
+                    .fixedSize()
             }
         }
         .foregroundStyle(lit ? Color.primary : (hoveredMode == mode ? Color.primary.opacity(0.8) : Color.secondary))
