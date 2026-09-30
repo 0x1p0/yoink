@@ -74,8 +74,19 @@ final class DownloadQueue: ObservableObject {
         UserDefaults.standard.set(url.path, forKey: outputDirPathKey)
     }
 
+    /// ⌘N / "Add Another Link": reuse a blank card if one is already waiting, so repeated
+    /// presses don't stack up empty cards — just move the cursor into it.
     func addJob() {
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) { jobs.append(DownloadJob()) }
+        if let blank = jobs.first(where: { !$0.hasURL && $0.status == .idle }) {
+            NotificationCenter.default.post(name: .focusJobURLField, object: blank.id)
+            return
+        }
+        let job = DownloadJob()
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) { jobs.append(job) }
+        // Give the new card a moment to appear before focusing its field
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            NotificationCenter.default.post(name: .focusJobURLField, object: job.id)
+        }
     }
     func addJob(url: String) {
         let job = DownloadJob(); job.url = url

@@ -5,6 +5,8 @@ extension Notification.Name {
     static let playlistURLDetected  = Notification.Name("playlistURLDetected")
     static let redownloadEntry      = Notification.Name("redownloadEntry")
     static let pasteAndFocus        = Notification.Name("pasteAndFocus")
+    /// Object: the `DownloadJob.id` whose link field should take keyboard focus.
+    static let focusJobURLField     = Notification.Name("focusJobURLField")
 }
 
 struct ContentView: View {

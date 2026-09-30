@@ -452,6 +452,7 @@ struct StatusIndicator: View {
 struct URLInputField: View {
     @ObservedObject var job: DownloadJob
     @EnvironmentObject var queue: DownloadQueue
+    @FocusState private var focused: Bool
     @State private var debounceTask: Task<Void, Never>? = nil
     @State private var urlUnsupported: Bool = false   // true when yt-dlp doesn't know this site
 
@@ -466,6 +467,11 @@ struct URLInputField: View {
                       prompt: Text("Paste a link — YouTube, Twitch, Vimeo, SoundCloud and 1000+ more"))
                 .textFieldStyle(.plain).font(.system(size: 13.5))
                 .disabled(!job.isEditable)
+                .focused($focused)
+                .onReceive(NotificationCenter.default.publisher(for: .focusJobURLField)) { note in
+                    guard (note.object as? UUID) == job.id else { return }
+                    DispatchQueue.main.async { focused = true }
+                }
                 .onAppear {
                     // When a new card is created with a URL already set (e.g. ⌘N then paste,
                     // or programmatic addJob(url:)), onChange never fires because the value
@@ -1268,6 +1274,7 @@ struct DownloadButton: View {
                         }
                         .foregroundStyle(btnFg)
                         .padding(.horizontal, 13).frame(height: 30)
+                        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                         .background {
                             let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
                             if #available(macOS 26.0, *), !isPrimary {
@@ -1399,8 +1406,12 @@ struct IconButton: View {
                 .foregroundStyle(fg)
                 .frame(width: 30, height: 30)
                 .background { buttonChrome }
+                // Plain buttons only hit-test opaque pixels; make the whole square clickable,
+                // not just the thin strokes of the glyph.
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain).onHover { hovered = $0 }.help(tooltip)
+        .accessibilityLabel(tooltip)
         .modifier(IconButtonGlassOnLabel(hovered: hovered, enabled: tint == nil && !destructive))
         .animation(.easeOut(duration: 0.12), value: hovered)
     }
